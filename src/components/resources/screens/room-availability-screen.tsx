@@ -24,7 +24,6 @@ import {
   canManageResources,
   canManageRoomAvailability,
   isSchedulerReadOnly,
-  ownDepartmentId,
 } from '@/lib/resources/permissions';
 import type {
   Room,
@@ -49,13 +48,19 @@ export function RoomAvailabilityScreen() {
     return map;
   }, [rooms.items]);
 
-  const own = ownDepartmentId(capability);
-  const ownRooms = useMemo(
-    () => rooms.items.filter((room) => room.owner_department.id === own),
-    [rooms.items, own],
+  /**
+   * Rooms this user may write availability for: every visible room for a college
+   * administrator, only the own department's otherwise.
+   */
+  const writableRooms = useMemo(
+    () =>
+      rooms.items.filter((room) =>
+        canManageRoomAvailability(capability, room.owner_department.id),
+      ),
+    [rooms.items, capability],
   );
 
-  const roomOptionList = useMemo(() => roomOptions(ownRooms), [ownRooms]);
+  const roomOptionList = useMemo(() => roomOptions(writableRooms), [writableRooms]);
   const semesterOptionList = useMemo(
     () => semesterOptions(semesters.items),
     [semesters.items],

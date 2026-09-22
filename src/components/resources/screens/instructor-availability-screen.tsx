@@ -24,7 +24,6 @@ import {
   canManageInstructorWindows,
   canManageResources,
   isSchedulerReadOnly,
-  ownDepartmentId,
 } from '@/lib/resources/permissions';
 import type {
   InstructorAvailability,
@@ -60,16 +59,21 @@ export function InstructorAvailabilityScreen() {
     return map;
   }, [instructors.items]);
 
-  const ownInstructors = useMemo(() => {
-    const own = ownDepartmentId(capability);
-    return instructors.items.filter(
-      (instructor) => instructor.primary_department.id === own,
-    );
-  }, [instructors.items, capability]);
+  /**
+   * Instructors this user may write availability for: every visible instructor
+   * for a college administrator, only the own department's otherwise.
+   */
+  const writableInstructors = useMemo(
+    () =>
+      instructors.items.filter((instructor) =>
+        canManageInstructorWindows(capability, instructor.primary_department.id),
+      ),
+    [instructors.items, capability],
+  );
 
   const instructorOptionList = useMemo(
-    () => instructorOptions(ownInstructors),
-    [ownInstructors],
+    () => instructorOptions(writableInstructors),
+    [writableInstructors],
   );
   const semesterOptionList = useMemo(
     () => semesterOptions(semesters.items),

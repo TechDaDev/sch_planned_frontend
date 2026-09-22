@@ -52,20 +52,28 @@ export function RoomSharingScreen() {
     return map;
   }, [rooms.items]);
 
-  const own = ownDepartmentId(capability);
-  const ownRooms = useMemo(
-    () => rooms.items.filter((room) => room.owner_department.id === own),
-    [rooms.items, own],
+  const ownDepartment = ownDepartmentId(capability);
+
+  /**
+   * Rooms this user may share: every visible room for a college administrator,
+   * only the own department's otherwise.
+   */
+  const writableRooms = useMemo(
+    () =>
+      rooms.items.filter((room) =>
+        canManageRoomSharing(capability, room.owner_department.id),
+      ),
+    [rooms.items, capability],
   );
 
-  const roomOptionList = useMemo(() => roomOptions(ownRooms), [ownRooms]);
+  const roomOptionList = useMemo(() => roomOptions(writableRooms), [writableRooms]);
   const departmentOptionList = useMemo(
     () => departmentOptions(departments.items),
     [departments.items],
   );
 
   const hasForeignDepartmentOption = departments.items.some(
-    (department) => department.id !== own,
+    (department) => department.id !== ownDepartment,
   );
   const canCreateGrant = canManageResources(capability) && hasForeignDepartmentOption;
 

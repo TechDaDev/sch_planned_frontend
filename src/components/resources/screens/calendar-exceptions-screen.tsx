@@ -53,6 +53,7 @@ import {
   canCreateExceptionForScope,
   canManageCalendarException,
   canManageResources,
+  hasCrossDepartmentAccess,
   isSchedulerReadOnly,
   ownDepartmentId,
 } from '@/lib/resources/permissions';
@@ -172,45 +173,46 @@ export function CalendarExceptionsScreen() {
     () => semesterOptions(semesters.items),
     [semesters.items],
   );
+  const crossDepartment = hasCrossDepartmentAccess(capability);
   const departmentOptionList = useMemo(
     () =>
       departmentOptions(
-        own === null
+        crossDepartment
           ? departments.items
           : departments.items.filter((department) => department.id === own),
       ),
-    [departments.items, own],
+    [departments.items, crossDepartment, own],
   );
   const instructorOptionList = useMemo(
     () =>
       instructorOptions(
-        own === null
+        crossDepartment
           ? instructors.items
           : instructors.items.filter(
               (instructor) => instructor.primary_department.id === own,
             ),
       ),
-    [instructors.items, own],
+    [instructors.items, crossDepartment, own],
   );
   const roomOptionList = useMemo(
     () =>
       roomOptions(
-        own === null
+        crossDepartment
           ? rooms.items
           : rooms.items.filter((room) => room.owner_department.id === own),
       ),
-    [rooms.items, own],
+    [rooms.items, crossDepartment, own],
   );
   const groupOptionList = useMemo(
     () =>
       studentGroupOptions(
-        own === null
+        crossDepartment
           ? groups.items
           : groups.items.filter(
               (group) => ownership.groupDepartment.get(group.id) === own,
             ),
       ),
-    [groups.items, ownership, own],
+    [groups.items, ownership, crossDepartment, own],
   );
 
   /**

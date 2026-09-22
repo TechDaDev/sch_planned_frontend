@@ -62,16 +62,21 @@ export function InstructorSharingScreen() {
     return map;
   }, [instructors.items]);
 
-  const ownInstructors = useMemo(() => {
-    const own = ownDepartmentId(capability);
-    return instructors.items.filter(
-      (instructor) => instructor.primary_department.id === own,
-    );
-  }, [instructors.items, capability]);
+  /**
+   * Instructors this user may share: every visible instructor for a college
+   * administrator, only the own department's otherwise.
+   */
+  const shareableInstructors = useMemo(
+    () =>
+      instructors.items.filter((instructor) =>
+        canManageInstructorSharing(capability, instructor.primary_department.id),
+      ),
+    [instructors.items, capability],
+  );
 
   const instructorOptionList = useMemo(
-    () => instructorOptions(ownInstructors),
-    [ownInstructors],
+    () => instructorOptions(shareableInstructors),
+    [shareableInstructors],
   );
 
   const departmentOptionList = useMemo(

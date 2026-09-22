@@ -21,7 +21,6 @@ import {
   canManageResources,
   canManageRoomCapabilityAssignment,
   isSchedulerReadOnly,
-  ownDepartmentId,
 } from '@/lib/resources/permissions';
 import type {
   Room,
@@ -53,13 +52,19 @@ export function RoomCapabilityAssignmentsScreen() {
     return map;
   }, [rooms.items]);
 
-  const own = ownDepartmentId(capability);
-  const ownRooms = useMemo(
-    () => rooms.items.filter((room) => room.owner_department.id === own),
-    [rooms.items, own],
+  /**
+   * Rooms this user may assign capabilities to: every visible room for a college
+   * administrator, only the own department's otherwise.
+   */
+  const writableRooms = useMemo(
+    () =>
+      rooms.items.filter((room) =>
+        canManageRoomCapabilityAssignment(capability, room.owner_department.id),
+      ),
+    [rooms.items, capability],
   );
 
-  const roomOptionList = useMemo(() => roomOptions(ownRooms), [ownRooms]);
+  const roomOptionList = useMemo(() => roomOptions(writableRooms), [writableRooms]);
   const capabilityOptionList = useMemo(
     () => roomCapabilityOptions(capabilities.items),
     [capabilities.items],

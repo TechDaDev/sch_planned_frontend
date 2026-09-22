@@ -6,7 +6,11 @@ import { describe, expect, it } from 'vitest';
 import { ToastProvider } from '@/components/providers/toast-provider';
 import { SessionProvider } from '@/components/providers/session-provider';
 import { CalendarExceptionsScreen } from '@/components/resources/screens/calendar-exceptions-screen';
+import { InstructorAvailabilityScreen } from '@/components/resources/screens/instructor-availability-screen';
+import { InstructorSharingScreen } from '@/components/resources/screens/instructor-sharing-screen';
+import { RoomAvailabilityScreen } from '@/components/resources/screens/room-availability-screen';
 import { RoomCapabilityAssignmentsScreen } from '@/components/resources/screens/room-capability-assignments-screen';
+import { RoomRequirementsScreen } from '@/components/resources/screens/room-requirements-screen';
 import { RoomsScreen } from '@/components/resources/screens/rooms-screen';
 import { TeachingAssignmentsScreen } from '@/components/resources/screens/teaching-assignments-screen';
 import {
@@ -38,6 +42,11 @@ const SCHEDULER = currentUserPayload({
   department: { id: BIOAI_DEPARTMENT_ID, name: 'Biomedical AI', code: 'BIOAI' },
 });
 
+const COLLEGE_ADMIN = currentUserPayload({
+  role: 'COLLEGE_ADMIN',
+  department: null,
+});
+
 /** Minimal academic reference rows the screens resolve ownership against. */
 const DEPARTMENT_ROWS = [
   { id: BIOAI_DEPARTMENT_ID, name: 'Biomedical AI', code: 'BIOAI' },
@@ -54,6 +63,48 @@ const SEMESTER_ROWS = [
     updated_at: '2026-09-01T08:00:00Z',
   },
 ];
+
+/** Academic reference rows used to resolve component ownership. */
+function teachingComponentRefRow() {
+  return {
+    id: 10,
+    component_type: 'THEORY',
+    label: 'Lecture A',
+    weekly_hours: '3.00',
+    session_duration_hours: '1.50',
+    sessions_per_week: 2,
+    offering: {
+      id: 9,
+      offering_code: 'MAIN',
+      course: { id: 7, name: 'Machine Learning', code: 'ML301' },
+    },
+    is_active: true,
+    created_at: '2026-09-01T08:00:00Z',
+    updated_at: '2026-09-01T08:00:00Z',
+  };
+}
+
+function courseOfferingRefRow() {
+  return {
+    id: 9,
+    offering_code: 'MAIN',
+    course: { id: 7, name: 'Machine Learning', code: 'ML301' },
+    semester: {
+      id: 8,
+      number: 1,
+      academic_year: { id: 3, start_year: 2026, end_year: 2027 },
+    },
+    managing_department: {
+      id: BIOAI_DEPARTMENT_ID,
+      name: 'Biomedical AI',
+      code: 'BIOAI',
+    },
+    total_weekly_hours: '3.00',
+    is_active: true,
+    created_at: '2026-09-01T08:00:00Z',
+    updated_at: '2026-09-01T08:00:00Z',
+  };
+}
 
 function renderScreen(element: React.ReactElement) {
   return render(
@@ -135,6 +186,26 @@ describe('rooms screen — shared and foreign rows', () => {
     expect(screen.queryByRole('button', { name: /^Edit / })).toBeNull();
     expect(screen.queryByRole('button', { name: /Deactivate|Activate/ })).toBeNull();
     expect(screen.getByText(/Read-only access/)).toBeVisible();
+  });
+});
+
+describe('college administrator resource options', () => {
+  it('offers every visible instructor when creating an availability window', async () => {
+    const user = userEvent.setup();
+    installFetchMock([
+      { url: SESSION_URL, handler: () => jsonResponse({ user: COLLEGE_ADMIN }) },
+      { url: `${PROXY}/instructor-availability`, handler: () => jsonResponse([]) },
+      { url: `${PROXY}/instructors`, handler: () => jsonResponse([instructorRow()]) },
+      { url: `${PROXY}/semesters`, handler: () => jsonResponse(SEMESTER_ROWS) },
+    ]);
+
+    renderScreen(<InstructorAvailabilityScreen />);
+
+    await user.click(await screen.findByRole('button', { name: 'New availability window' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Create availability window' });
+
+    expect(within(dialog).getByLabelText(/Instructor/)).toHaveValue('');
+    expect(within(dialog).getByRole('option', { name: /Rana Salim/ })).toBeVisible();
   });
 });
 
@@ -273,50 +344,11 @@ describe('teaching assignments — single primary refusal', () => {
       },
       {
         url: `${PROXY}/teaching-components`,
-        handler: () =>
-          jsonResponse([
-            {
-              id: 10,
-              component_type: 'THEORY',
-              label: 'Lecture A',
-              weekly_hours: '3.00',
-              session_duration_hours: '1.50',
-              sessions_per_week: 2,
-              offering: {
-                id: 9,
-                offering_code: 'MAIN',
-                course: { id: 7, name: 'Machine Learning', code: 'ML301' },
-              },
-              is_active: true,
-              created_at: '2026-09-01T08:00:00Z',
-              updated_at: '2026-09-01T08:00:00Z',
-            },
-          ]),
+        handler: () => jsonResponse([teachingComponentRefRow()]),
       },
       {
         url: `${PROXY}/course-offerings`,
-        handler: () =>
-          jsonResponse([
-            {
-              id: 9,
-              offering_code: 'MAIN',
-              course: { id: 7, name: 'Machine Learning', code: 'ML301' },
-              semester: {
-                id: 8,
-                number: 1,
-                academic_year: { id: 3, start_year: 2026, end_year: 2027 },
-              },
-              managing_department: {
-                id: BIOAI_DEPARTMENT_ID,
-                name: 'Biomedical AI',
-                code: 'BIOAI',
-              },
-              total_weekly_hours: '3.00',
-              is_active: true,
-              created_at: '2026-09-01T08:00:00Z',
-              updated_at: '2026-09-01T08:00:00Z',
-            },
-          ]),
+        handler: () => jsonResponse([courseOfferingRefRow()]),
       },
       { url: `${PROXY}/instructors`, handler: () => jsonResponse([instructorRow()]) },
       {
@@ -342,5 +374,106 @@ describe('teaching assignments — single primary refusal', () => {
       ).toBeGreaterThan(0);
     });
     expect(screen.getByRole('dialog', { name: 'Create teaching assignment' })).toBeVisible();
+  });
+});
+
+/**
+ * Regression guard for the resource-option selectors.
+ *
+ * A college administrator owns no department (`ownDepartmentId` is `null`), so an
+ * option list filtered by department equality would be empty. Every writable
+ * option list must be derived from the capability helpers instead, which is
+ * verified here per resource family.
+ */
+describe('college administrator option lists', () => {
+  it('offers every visible instructor when sharing one', async () => {
+    const user = userEvent.setup();
+    installFetchMock([
+      { url: SESSION_URL, handler: () => jsonResponse({ user: COLLEGE_ADMIN }) },
+      { url: `${PROXY}/instructor-department-access`, handler: () => jsonResponse([]) },
+      { url: `${PROXY}/instructors`, handler: () => jsonResponse([instructorRow()]) },
+      { url: `${PROXY}/departments`, handler: () => jsonResponse(DEPARTMENT_ROWS) },
+    ]);
+
+    renderScreen(<InstructorSharingScreen />);
+
+    await user.click(await screen.findByRole('button', { name: 'New sharing grant' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Create sharing grant' });
+
+    expect(within(dialog).getByRole('option', { name: /Rana Salim/ })).toBeVisible();
+    expect(
+      within(dialog).getByRole('option', { name: /BIOAI — Biomedical AI/ }),
+    ).toBeVisible();
+  });
+
+  it('offers every visible room when assigning a capability', async () => {
+    const user = userEvent.setup();
+    installFetchMock([
+      { url: SESSION_URL, handler: () => jsonResponse({ user: COLLEGE_ADMIN }) },
+      {
+        url: `${PROXY}/room-capability-assignments`,
+        handler: () => jsonResponse([]),
+      },
+      { url: `${PROXY}/rooms`, handler: () => jsonResponse([roomRow()]) },
+      {
+        url: `${PROXY}/room-capabilities?is_active=true`,
+        handler: () => jsonResponse([roomCapabilityRow()]),
+      },
+    ]);
+
+    renderScreen(<RoomCapabilityAssignmentsScreen />);
+
+    await user.click(await screen.findByRole('button', { name: 'New capability assignment' }));
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Create capability assignment',
+    });
+
+    expect(within(dialog).getByRole('option', { name: /AI-LAB-1/ })).toBeVisible();
+    expect(within(dialog).getByRole('option', { name: /COMPUTERS/ })).toBeVisible();
+  });
+
+  it('offers every visible component when configuring a room requirement', async () => {
+    const user = userEvent.setup();
+    installFetchMock([
+      { url: SESSION_URL, handler: () => jsonResponse({ user: COLLEGE_ADMIN }) },
+      {
+        url: `${PROXY}/teaching-component-room-requirements`,
+        handler: () => jsonResponse([]),
+      },
+      {
+        url: `${PROXY}/teaching-components`,
+        handler: () => jsonResponse([teachingComponentRefRow()]),
+      },
+      { url: `${PROXY}/course-offerings`, handler: () => jsonResponse([courseOfferingRefRow()]) },
+      {
+        url: `${PROXY}/room-types?is_active=true`,
+        handler: () => jsonResponse([roomTypeRow()]),
+      },
+    ]);
+
+    renderScreen(<RoomRequirementsScreen />);
+
+    await user.click(await screen.findByRole('button', { name: 'New room requirement' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Create room requirement' });
+
+    expect(within(dialog).getByRole('option', { name: /ML301 — Theory/ })).toBeVisible();
+    expect(within(dialog).getByRole('option', { name: /LECTURE_HALL/ })).toBeVisible();
+  });
+
+  it('offers every visible room when creating availability', async () => {
+    const user = userEvent.setup();
+    installFetchMock([
+      { url: SESSION_URL, handler: () => jsonResponse({ user: COLLEGE_ADMIN }) },
+      { url: `${PROXY}/room-availability`, handler: () => jsonResponse([]) },
+      { url: `${PROXY}/rooms`, handler: () => jsonResponse([roomRow()]) },
+      { url: `${PROXY}/semesters`, handler: () => jsonResponse(SEMESTER_ROWS) },
+    ]);
+
+    renderScreen(<RoomAvailabilityScreen />);
+
+    await user.click(await screen.findByRole('button', { name: 'New availability window' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Create availability window' });
+
+    expect(within(dialog).getByRole('option', { name: /AI-LAB-1/ })).toBeVisible();
   });
 });

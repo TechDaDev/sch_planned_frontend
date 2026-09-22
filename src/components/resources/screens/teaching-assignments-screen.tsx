@@ -34,6 +34,7 @@ import {
 import {
   canManageResources,
   canManageTeachingAssignment,
+  hasCrossDepartmentAccess,
   isSchedulerReadOnly,
   ownDepartmentId,
 } from '@/lib/resources/permissions';
@@ -89,18 +90,26 @@ export function TeachingAssignmentsScreen() {
   }, [components.items, offerings.items]);
 
   const own = ownDepartmentId(capability);
-  const isCollegeAdminUser = own === null;
+  const isCollegeAdminUser = hasCrossDepartmentAccess(capability);
+
+  /**
+   * Components this user may staff: every visible component for a college
+   * administrator, only the ones its department manages otherwise.
+   */
+  const writableComponents = useMemo(
+    () =>
+      components.items.filter((component) =>
+        canManageTeachingAssignment(
+          capability,
+          componentDepartment.get(component.id) ?? null,
+        ),
+      ),
+    [components.items, componentDepartment, capability],
+  );
 
   const componentOptionList = useMemo(
-    () =>
-      teachingComponentOptions(
-        isCollegeAdminUser
-          ? components.items
-          : components.items.filter(
-              (component) => componentDepartment.get(component.id) === own,
-            ),
-      ),
-    [components.items, componentDepartment, isCollegeAdminUser, own],
+    () => teachingComponentOptions(writableComponents),
+    [writableComponents],
   );
 
   /**

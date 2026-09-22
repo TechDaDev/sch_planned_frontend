@@ -26,7 +26,6 @@ import {
   canManageResources,
   canManageRoomRequirement,
   isSchedulerReadOnly,
-  ownDepartmentId,
 } from '@/lib/resources/permissions';
 import type {
   RoomType,
@@ -69,18 +68,21 @@ export function RoomRequirementsScreen() {
     return map;
   }, [components.items, offerings.items]);
 
-  const own = ownDepartmentId(capability);
-  const ownComponents = useMemo(
+  /**
+   * Components this user may configure: every visible component for a college
+   * administrator, only the ones its department manages otherwise.
+   */
+  const writableComponents = useMemo(
     () =>
-      components.items.filter(
-        (component) => componentDepartment.get(component.id) === own,
+      components.items.filter((component) =>
+        canManageRoomRequirement(capability, componentDepartment.get(component.id) ?? null),
       ),
-    [components.items, componentDepartment, own],
+    [components.items, componentDepartment, capability],
   );
 
   const componentOptionList = useMemo(
-    () => teachingComponentOptions(ownComponents),
-    [ownComponents],
+    () => teachingComponentOptions(writableComponents),
+    [writableComponents],
   );
   const roomTypeOptionList = useMemo(
     () => roomTypeOptions(roomTypes.items),
