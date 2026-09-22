@@ -1,6 +1,6 @@
 {
   "name": "sch-planned-frontend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "College Academic Schedule Planner - frontend (Next.js App Router, BFF authentication).",
   "engines": {
@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "smoke:production": "node scripts/smoke-production.mjs"
   },
   "dependencies": {
     "clsx": "2.1.1",

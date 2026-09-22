@@ -7,12 +7,14 @@ import {
   appendClearAuthCookies,
   buildAuthCookieHeaders,
   buildClearAuthCookieHeaders,
+  clearedCookieConfig,
   currentAuthCookieConfigs,
   REFRESH_COOKIE_NAME,
   REFRESH_TOKEN_MAX_AGE_SECONDS,
   readAccessToken,
   readCookieValue,
   readRefreshToken,
+  serializeAuthCookie,
 } from '@/lib/auth/cookies';
 
 afterEach(() => {
@@ -98,5 +100,42 @@ describe('reading cookies', () => {
     const anonymous = new Request('https://planner.test/api/auth/session');
     expect(readAccessToken(anonymous)).toBeNull();
     expect(readRefreshToken(anonymous)).toBeNull();
+  });
+});
+
+// --- F5: deletion must match the attributes of the cookie it removes --------
+
+describe('deletion cookie policy', () => {
+  it('clears a cookie with the same path and security attributes it was set with', () => {
+    for (const isProduction of [false, true]) {
+      vi.stubEnv('NODE_ENV', isProduction ? 'production' : 'development');
+
+      const set = currentAuthCookieConfigs();
+      const clearedAccess = clearedCookieConfig(ACCESS_COOKIE_NAME);
+      const clearedRefresh = clearedCookieConfig(REFRESH_COOKIE_NAME);
+
+      for (const [setConfig, clearedConfig] of [
+        [set.access, clearedAccess],
+        [set.refresh, clearedRefresh],
+      ] as const) {
+        expect(clearedConfig.path).toBe(setConfig.path);
+        expect(clearedConfig.sameSite).toBe(setConfig.sameSite);
+        expect(clearedConfig.httpOnly).toBe(true);
+        expect(clearedConfig.secure).toBe(setConfig.secure);
+        expect(clearedConfig.maxAge).toBe(0);
+      }
+
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('serializes a deletion as Max-Age=0 with no value', () => {
+    const serialized = serializeAuthCookie(clearedCookieConfig(ACCESS_COOKIE_NAME), '');
+
+    expect(serialized).toContain('sch_access=;');
+    expect(serialized).toContain('Max-Age=0');
+    expect(serialized).toContain('Path=/');
+    expect(serialized).toContain('HttpOnly');
+    expect(serialized).toContain('SameSite=Lax');
   });
 });

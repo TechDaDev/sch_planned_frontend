@@ -10,6 +10,8 @@ import {
   readJsonRequest,
   readNonEmptyString,
 } from '@/lib/http/responses';
+import { sameOriginRejectionResponse } from '@/lib/http/same-origin';
+import { withServerFailureHandling } from '@/lib/http/server-failure';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,8 +21,22 @@ export const dynamic = 'force-dynamic';
  * Same-origin sign-in endpoint. It exchanges credentials with Django, stores
  * both JWTs in HttpOnly cookies and returns only safe session data. Tokens,
  * Authorization headers and raw backend errors never reach the browser.
+ *
+ * A cross-site attempt is rejected before any credential is read, so a foreign page
+ * cannot use a visitor's browser as a login oracle.
  */
 export async function POST(request: Request): Promise<Response> {
+  // A cross-site attempt is rejected before any credential is read, so a foreign page
+  // cannot use a visitor's browser as a login oracle.
+  const crossSite = sameOriginRejectionResponse(request);
+  if (crossSite) {
+    return crossSite;
+  }
+
+  return withServerFailureHandling('POST /api/auth/login', () => handleLogin(request));
+}
+
+async function handleLogin(request: Request): Promise<Response> {
   const payload = await readJsonRequest(request);
   if (!isPlainRecord(payload)) {
     return errorResponse(

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME } from '@/lib/auth/cookies';
+import { isProtectedPath } from '@/lib/navigation/protected-paths';
 import { buildLoginUrl, LOGIN_PATH } from '@/lib/navigation/redirect';
 
 /**
@@ -10,23 +11,6 @@ import { buildLoginUrl, LOGIN_PATH } from '@/lib/navigation/redirect';
  * server can validate a session, so it must never be treated as authorization:
  * the BFF route handlers and Django remain authoritative.
  */
-
-const PROTECTED_PREFIXES = [
-  '/dashboard',
-  '/academic',
-  '/resources',
-  '/scheduling',
-  '/reports',
-  '/audit',
-  '/my-timetable',
-  '/forbidden',
-];
-
-function isProtectedPath(pathname: string): boolean {
-  return PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-}
 
 export function proxy(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
@@ -55,6 +39,10 @@ export function proxy(request: NextRequest): NextResponse {
   return NextResponse.next();
 }
 
+/**
+ * The matcher must be statically analyzable, so it repeats the prefix list rather than
+ * deriving it. `protected-paths.test.ts` fails if the two ever drift apart.
+ */
 export const config = {
   matcher: [
     '/',
@@ -62,8 +50,10 @@ export const config = {
     '/academic/:path*',
     '/resources/:path*',
     '/scheduling/:path*',
+    '/published/:path*',
     '/reports/:path*',
     '/audit/:path*',
+    '/imports/:path*',
     '/my-timetable/:path*',
     '/forbidden/:path*',
     '/login',

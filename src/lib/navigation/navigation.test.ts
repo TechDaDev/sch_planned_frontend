@@ -102,7 +102,7 @@ describe('path access', () => {
     expect(findNavItemForPath('COLLEGE_ADMIN', '/reports/published')?.href).toBe('/reports');
     expect(
       findNavItemForPath('DEPARTMENT_ADMIN', '/imports/semester-plan')?.href,
-    ).toBe('/imports');
+    ).toBe('/imports/semester-plan');
     expect(
       findNavItemForPath('COLLEGE_ADMIN', '/scheduling/versions/4/edit')?.href,
     ).toBe('/scheduling');

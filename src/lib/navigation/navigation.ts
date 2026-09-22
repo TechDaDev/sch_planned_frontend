@@ -80,7 +80,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ['COLLEGE_ADMIN', 'DEPARTMENT_ADMIN', 'SCHEDULER', 'VIEWER'],
   },
   {
-    href: '/imports',
+    href: '/imports/semester-plan',
     label: 'Imports',
     description: 'Semester teaching plan workbook import.',
     iconKey: 'imports',

@@ -339,3 +339,178 @@ describe('binary and body handling', () => {
     expect(mock.calls[0]?.init.body).toBeUndefined();
   });
 });
+
+// --- F5: same-origin mutation guard and HTTP status fidelity ----------------
+
+const ORIGIN = 'https://planner.test';
+
+describe('same-origin guard on the proxy', () => {
+  it('rejects a cross-site mutation before any backend call', async () => {
+    const mock = installFetchMock([]);
+
+    const response = await POST(
+      proxyRequest('/api/backend/academics/rooms', {
+        method: 'POST',
+        headers: {
+          'sec-fetch-site': 'cross-site',
+          origin: 'https://evil.example',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ code: 'X' }),
+      }),
+      context(['academics', 'rooms']),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'cross_site_request_rejected' });
+    expect(mock.calls).toHaveLength(0);
+  });
+
+  it('rejects a mismatched Origin before any backend call', async () => {
+    const mock = installFetchMock([]);
+
+    const response = await POST(
+      proxyRequest('/api/backend/academics/rooms', {
+        method: 'POST',
+        headers: { origin: 'https://evil.example' },
+        body: '{}',
+      }),
+      context(['academics', 'rooms']),
+    );
+
+    expect(response.status).toBe(403);
+    expect(mock.calls).toHaveLength(0);
+  });
+
+  it('allows a same-origin mutation and a non-browser client', async () => {
+    const mock = installFetchMock([
+      {
+        url: `${BACKEND}/api/academics/rooms/`,
+        method: 'POST',
+        handler: () => jsonResponse({ id: 7 }, 201),
+      },
+    ]);
+
+    const sameOrigin = await POST(
+      proxyRequest('/api/backend/academics/rooms', {
+        method: 'POST',
+        headers: { origin: ORIGIN, 'content-type': 'application/json' },
+        body: '{}',
+      }),
+      context(['academics', 'rooms']),
+    );
+    const scripted = await POST(
+      proxyRequest('/api/backend/academics/rooms', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }),
+      context(['academics', 'rooms']),
+    );
+
+    expect(sameOrigin.status).toBe(201);
+    expect(scripted.status).toBe(201);
+    expect(mock.callsTo(`${BACKEND}/api/academics/rooms/`)).toHaveLength(2);
+  });
+
+  it('never applies the mutation rule to a read', async () => {
+    installFetchMock([
+      {
+        url: `${BACKEND}/api/academics/rooms/`,
+        handler: () => jsonResponse([]),
+      },
+    ]);
+
+    const response = await GET(
+      proxyRequest('/api/backend/academics/rooms', {
+        headers: { 'sec-fetch-site': 'cross-site', cookie: 'sch_access=token' },
+      }),
+      context(['academics', 'rooms']),
+    );
+
+    expect(response.status).toBe(200);
+  });
+});
+
+describe('HTTP status fidelity', () => {
+  it('never caches an authenticated backend response publicly', async () => {
+    installFetchMock([
+      {
+        url: `${BACKEND}/api/academics/rooms/`,
+        handler: () => jsonResponse([{ id: 1 }]),
+      },
+    ]);
+
+    const response = await GET(
+      proxyRequest('/api/backend/academics/rooms', { headers: { cookie: 'sch_access=token' } }),
+      context(['academics', 'rooms']),
+    );
+
+    expect(response.headers.get('cache-control')).toContain('no-store');
+  });
+
+  it('passes a 403 through as 403 and keeps the session intact', async () => {
+    installFetchMock([
+      {
+        url: `${BACKEND}/api/academics/rooms/`,
+        handler: () => jsonResponse({ detail: 'Forbidden.' }, 403),
+      },
+    ]);
+
+    const response = await GET(
+      proxyRequest('/api/backend/academics/rooms', { headers: { cookie: 'sch_access=token' } }),
+      context(['academics', 'rooms']),
+    );
+
+    expect(response.status).toBe(403);
+    // A 403 is an authorization answer, not an expired session: nothing is cleared.
+    expect(response.headers.getSetCookie()).toHaveLength(0);
+  });
+
+  it('passes an out-of-scope 404 through unchanged', async () => {
+    installFetchMock([
+      {
+        url: `${BACKEND}/api/scheduling/schedule-versions/501/`,
+        handler: () => jsonResponse({ detail: 'Not found.' }, 404),
+      },
+    ]);
+
+    const response = await GET(
+      proxyRequest('/api/backend/scheduling/schedule-versions/501', {
+        headers: { cookie: 'sch_access=token' },
+      }),
+      context(['scheduling', 'schedule-versions', '501']),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ detail: 'Not found.' });
+  });
+
+  it('preserves a structured 409 refusal body', async () => {
+    const refusal = {
+      persisted: false,
+      reason: 'STALE_BASE_VERSION',
+      message: 'A newer version exists.',
+      validation: { valid: false, issues: [{ code: 'ROOM_UNAVAILABLE' }] },
+    };
+    installFetchMock([
+      {
+        url: `${BACKEND}/api/scheduling/schedule-versions/501/manual-edit/`,
+        method: 'POST',
+        handler: () => jsonResponse(refusal, 409),
+      },
+    ]);
+
+    const response = await POST(
+      proxyRequest('/api/backend/scheduling/schedule-versions/501/manual-edit', {
+        method: 'POST',
+        headers: { cookie: 'sch_access=token', 'content-type': 'application/json' },
+        body: JSON.stringify({ changes: [] }),
+      }),
+      context(['scheduling', 'schedule-versions', '501', 'manual-edit']),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual(refusal);
+  });
+});

@@ -76,7 +76,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <PageHeading
         title={`Welcome, ${user.full_name}`}
-        description="Frontend F0 provides the application foundation, authentication and this shell. Domain modules arrive in later phases."
+        description="Your signed-in account, its role, and the modules that role may use."
       />
 
       {missingDepartment ? (
@@ -109,7 +109,9 @@ export default function DashboardPage() {
                   <CardDescription>{item.description}</CardDescription>
                 </CardHeader>
                 <CardBody>
-                  <Badge tone="neutral">Delivered in a later phase</Badge>
+                  <Link className="text-sm underline" href={item.href}>
+                    Open {item.label}
+                  </Link>
                 </CardBody>
               </Card>
             ))}

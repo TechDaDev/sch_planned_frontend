@@ -66,7 +66,7 @@ export async function requestBackendLogin(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ username, password }),
       cache: 'no-store',
-      signal: backendRequestSignal(signal),
+      signal: backendRequestSignal('auth/login/', signal),
     });
   } catch {
     return { ok: false, reason: 'unavailable' };
@@ -102,7 +102,7 @@ export async function requestBackendCurrentUser(
         authorization: `Bearer ${accessToken}`,
       },
       cache: 'no-store',
-      signal: backendRequestSignal(signal),
+      signal: backendRequestSignal('me/', signal),
     });
   } catch {
     return { ok: false, reason: 'unavailable' };
@@ -131,7 +131,7 @@ export async function requestBackendRefresh(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ refresh: refreshToken }),
       cache: 'no-store',
-      signal: backendRequestSignal(signal),
+      signal: backendRequestSignal('auth/refresh/', signal),
     });
   } catch {
     return { ok: false, reason: 'unavailable' };

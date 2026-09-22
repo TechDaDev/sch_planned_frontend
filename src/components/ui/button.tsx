@@ -18,12 +18,18 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
   md: 'h-10 px-4 text-sm',
 };
 
-export interface ButtonProps extends React.ComponentPropsWithoutRef<'button'> {
+export interface ButtonProps extends React.ComponentPropsWithRef<'button'> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   isLoading?: boolean;
 }
 
+/**
+ * Shared button.
+ *
+ * `ref` is part of the accepted props so a dialog or a form can move focus to a specific
+ * control; React 19 passes it through as an ordinary prop.
+ */
 export function Button({
   variant = 'primary',
   size = 'md',

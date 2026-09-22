@@ -1,5 +1,5 @@
 /**
- * Scheduling domain models (Frontend F3).
+ * Scheduling domain models.
  *
  * Field names mirror the accepted backend exactly (`scheduling/serializers.py`,
  * Backend API v1.0.0). The scheduling API is read-only plus two generation

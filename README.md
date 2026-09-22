@@ -1,11 +1,22 @@
 # College Academic Schedule Planner — Frontend
 
 Frontend for the College Academic Schedule Planner, an operational college scheduling
-system. This repository currently contains **Frontend Phase F0**: project foundation,
-BFF authentication, application shell and the testing/quality gate.
+system.
 
+**Status: release candidate.** Frontend phases F0–F5 are implemented: project foundation,
+BFF authentication, application shell, academic administration, resources and calendar,
+the scheduling workspace, schedule operations/publication/reporting/import/audit, and the
+final production hardening. Frontend version **1.0.0** against **Backend API v1.0.0**.
+F5 is complete in this branch and awaiting independent frontend acceptance; nothing here
+claims that acceptance.
+
+- Release documentation: [`docs/FINAL_FRONTEND_ARCHITECTURE.md`](docs/FINAL_FRONTEND_ARCHITECTURE.md),
+  [`docs/FRONTEND_RELEASE_CHECKLIST.md`](docs/FRONTEND_RELEASE_CHECKLIST.md),
+  [`docs/DEPLOYMENT_READINESS.md`](docs/DEPLOYMENT_READINESS.md),
+  [`docs/BACKEND_API_COVERAGE.md`](docs/BACKEND_API_COVERAGE.md)
 - Backend: `https://github.com/TechDaDev/sch_planned_backend.git` (Backend API v1.0.0)
-- Backend development base URL: `http://127.0.0.1:8000`
+- Backend development base URL: `http://127.0.0.1:8000` (development only; production must
+  set `BACKEND_API_URL` explicitly and fails closed without it)
 - Frontend local URL: `http://localhost:3000`
 
 ## Stack
@@ -21,13 +32,15 @@ BFF authentication, application shell and the testing/quality gate.
 | Tests        | Vitest `5`, React Testing Library, `@testing-library/user-event`, `jsdom` |
 | Package mgr  | npm with committed `package-lock.json`                       |
 
-No component framework (Material UI / Ant Design) is used; F0 relies on React,
-Tailwind and small local components.
+No component framework (Material UI / Ant Design) and no charting framework is used; the
+application relies on React, Tailwind and small local components.
 
 ### Node.js requirement
 
-Node.js **24 LTS** is the recommended runtime. `package.json#engines` requires
-`>=20.9.0`, which is what the current Next.js 16 toolchain supports.
+Production target: **Node 24 LTS** (`.nvmrc`).
+Next.js minimum is lower (`package.json#engines` requires `>=20.9.0`), but Node 24 is the
+project runtime target. Gates passing on Node 22 are compatibility evidence, not a
+substitute for running the deployment on Node 24.
 
 ## Install and run
 
@@ -42,21 +55,24 @@ The Django backend must be running separately for real sign-in
 
 ### Scripts
 
-| Script                | Purpose                                  |
-| --------------------- | ---------------------------------------- |
-| `npm run dev`         | Development server                       |
-| `npm run build`       | Production build                         |
-| `npm start`           | Serve the production build               |
-| `npm run lint`        | ESLint (no errors at handoff)            |
-| `npm run typecheck`   | `tsc --noEmit`                           |
-| `npm test`            | Vitest in watch mode                     |
-| `npm run test:run`    | Vitest single run (unit tests only)      |
+| Script                    | Purpose                                       |
+| ------------------------- | --------------------------------------------- |
+| `npm run dev`             | Development server                            |
+| `npm run build`           | Production build                              |
+| `npm start`               | Serve the production build                    |
+| `npm run lint`            | ESLint (no errors or warnings at handoff)     |
+| `npm run typecheck`       | `tsc --noEmit`                                |
+| `npm test`                | Vitest in watch mode                          |
+| `npm run test:run`        | Vitest single run                             |
+| `npm run smoke:production`| HTTP smoke test of the built server (needs `npm run build` first) |
 
-Unit tests never require a live Django server: backend `fetch` calls are mocked.
+Unit and integration tests never require a live Django server: backend `fetch` calls are
+mocked. `npm run smoke:production` starts the real built server against a small stub
+backend and stops both when it finishes.
 
 ## Environment configuration
 
-`.env.example` documents the only variable F0 needs:
+`.env.example` documents the only variable the application needs:
 
 ```
 BACKEND_API_URL=http://127.0.0.1:8000
@@ -64,10 +80,28 @@ BACKEND_API_URL=http://127.0.0.1:8000
 
 - `BACKEND_API_URL` is **server-only**. It deliberately has no `NEXT_PUBLIC_`
   prefix, so the internal backend URL never reaches browser JavaScript.
+- **Development** may omit it; the application then targets
+  `http://127.0.0.1:8000`.
+- **Production** must set it. A missing or invalid value fails closed: the
+  application refuses to assume a host and answers a controlled `503`, logging only
+  the variable name server-side. The accepted shape is an absolute `http(s)` URL
+  with a host, no embedded credentials and no fragment; a trailing slash is
+  stripped.
 - Only variables prefixed with `NEXT_PUBLIC_` are exposed to the client bundle.
-  F0 has none, and no JWT, cookie secret or infrastructure URL may ever be added
+  There are none, and no JWT, cookie secret or infrastructure URL may ever be added
   there.
 - `.env.local` is git-ignored and must never be committed.
+
+## Health endpoints
+
+| Endpoint | Meaning |
+| --- | --- |
+| `GET /api/health/live` | The process is running. Checks no dependency, so it stays useful during a backend outage. |
+| `GET /api/health/ready` | This frontend **and** its backend dependency can serve traffic. The backend's readiness endpoint is called server-to-server. |
+
+Both are public and `no-store`, and neither reveals a host, a path, an environment
+value or a version. Readiness depends on backend readiness, so a load balancer
+should route traffic on `ready` and base restart decisions on `live` only.
 
 ## Authentication architecture
 
@@ -950,25 +984,46 @@ src/
 | **F1** | Academic Administration: colleges, departments, academic years, semesters, study programs, stages, student groups, courses, course offerings, teaching components and component/group links, with capability-aware read/write UI and no hard deletes. |
 | **F2** | Resources and Calendar Administration: instructor profiles, instructor sharing, hard availability, soft preferences, teaching assignments, room types and capabilities, rooms, room sharing, capability assignments, room availability, component room requirements and required capabilities, working days, time slots, breaks and dated calendar exceptions. |
 | **F3** | Scheduling Workspace: readiness validation, department and college preview generation, generate-and-persist department and college drafts, persisted schedule list and detail, immutable version history, persisted version timetable view and version-to-version comparison. |
-| **F4 (this branch)** | Schedule Operations, Publication, Reporting, Import and Audit: validated manual editing, the submit/review/approve/publish workflow, the official published timetable, instructor My Timetable, version and published analytics, Excel and PDF exports, semester teaching-plan import and the administrative audit viewer. |
-| F5 | Deployment hardening, Content-Security-Policy, mobile integration. |
+| **F4** | Schedule Operations, Publication, Reporting, Import and Audit: validated manual editing, the submit/review/approve/publish workflow, the official published timetable, instructor My Timetable, version and published analytics, Excel and PDF exports, semester teaching-plan import and the administrative audit viewer. |
+| **F5 (this branch)** | Final hardening and release candidate: production environment fail-closed, static-compatible CSP and security headers, same-origin mutation protection, BFF hardening, health endpoints, error boundaries, endpoint-aware timeouts, download-filename safety, role-journey integration coverage, route inventory, hygiene scans, a production smoke harness, and the release documentation set. |
 
-F0 intentionally ships no domain CRUD tables and no fake schedule data. F1 ships the
-academic administration module, F2 the resource and calendar administration module,
-F3 the scheduling workspace and F4 the schedule operations, publication, reporting,
-import and audit module. Deployment hardening, a strict Content-Security-Policy and
-the mobile integration remain in F5. No screen is populated with invented data: an
-empty backend produces a real empty state, F3 draws no timetable until a preview is
-solved or a version is stored, and F4 shows nothing until the backend answers.
+F0 ships no domain CRUD tables and no fake schedule data. F1 ships the academic
+administration module, F2 the resource and calendar administration module, F3 the
+scheduling workspace, F4 the schedule operations and reporting module, and F5 the
+production hardening and release documentation. No screen is populated with invented
+data: an empty backend produces a real empty state, F3 draws no timetable until a preview
+is solved or a version is stored, and F4 shows nothing until the backend answers.
+
+F5 adds no scheduling or business feature. It also adds no deployment artefact: no
+Railway configuration, no Dockerfile, no production domain and no HSTS, because those
+depend on a deployment and domain topology that is not known yet. See
+[`docs/DEPLOYMENT_READINESS.md`](docs/DEPLOYMENT_READINESS.md).
 
 ## Security notes
 
 - JWTs are intentionally never stored in browser storage or readable by JavaScript.
-- Security headers applied in `next.config.ts`: `X-Content-Type-Options`,
-  `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`. A strict CSP is
-  deliberately deferred to F5 so it can be built and tested with nonces.
+  A source scan (`src/test/release-hygiene.test.ts`) fails the suite if a token could
+  reach `localStorage`, `sessionStorage`, `IndexedDB` or `document.cookie`.
+- Security headers applied in `next.config.ts` on every response:
+  `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`,
+  `X-Frame-Options`, `Permissions-Policy`, with `poweredByHeader: false`.
+- The CSP is **static**, so the statically optimized App Router build is preserved. It
+  uses `'unsafe-inline'` for scripts and styles, which Next.js requires, and it never
+  contains `'unsafe-eval'` in production. `connect-src 'self'` is sufficient because all
+  browser traffic is same-origin.
+- State-changing requests on `/api/auth/*` and `/api/backend/*` pass a same-origin guard:
+  `Sec-Fetch-Site: cross-site` is refused, and a present `Origin` must match the host the
+  request was delivered to. A rejected request is never forwarded to Django.
+- A production configuration problem fails closed and never returns an environment value,
+  a stack trace, a filesystem path or an internal backend URL to a browser.
+- Download filenames taken from `Content-Disposition` are sanitized before becoming
+  browser download names; the file bytes are untouched.
+- No production source contains `dangerouslySetInnerHTML`, an `innerHTML` assignment or a
+  `console.log`/`debug`/`info` call.
+- HSTS is deliberately **not** set: it depends on HTTPS and domain topology and is
+  finalized at deployment.
 - `npm audit` reports **0 vulnerabilities** at handoff.
-- No deployment configuration (Railway/Docker/Procfile) is part of F0.
+- No deployment configuration (Railway/Docker/Procfile) is part of this phase.
 
 ## Quality gate
 
@@ -980,15 +1035,19 @@ npm run lint
 npm run typecheck
 npm run test:run
 npm run build
+npm run smoke:production   # requires a prior build
 npm audit
 ```
 
-The suite currently reports **728 tests in 42 files**, covering F0 (auth, proxy,
-navigation, roles), F1 (academic administration), F2 (resources and calendar),
-F3 (scheduling workspace) and F4 (operations, publication, reporting, import and
-audit). F1–F3 regression tests are kept intact and are never weakened to
+The suite reports **912 tests in 56 files**, covering F0 (auth, proxy, navigation,
+roles), F1 (academic administration), F2 (resources and calendar), F3 (scheduling
+workspace), F4 (operations, publication, reporting, import and audit) and F5
+(production environment, CSP and headers, same-origin guard, health endpoints, error
+boundaries, role journeys, route inventory, hygiene scans and the smoke harness).
+Regression tests from earlier phases are kept intact and are never weakened to
 accommodate a later phase.
 
 `npm ci` reports Node engine warnings on this machine (Node 22.22.1 installed;
-Node 24 LTS is recommended and is what `engines` prefers). The warnings are
-non-blocking while every gate above passes.
+Node 24 LTS is the runtime target and is what `.nvmrc` selects). The warnings are
+non-blocking while every gate above passes; the Node 24 run is reproduced at
+deployment.

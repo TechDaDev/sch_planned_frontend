@@ -201,6 +201,33 @@ export async function apiFetchBinary(
   };
 }
 
+/**
+ * A filename safe to hand to the browser download attribute.
+ *
+ * A `Content-Disposition` header comes from the backend, but a filename is still a
+ * value that ends up in a browser API, so it is reduced to a plain name: directory
+ * separators, control characters, quotes, a leading dot and a reserved Windows device
+ * name are all removed. The file bytes are untouched; only the suggested name changes.
+ */
+export function sanitizeDownloadFilename(value: string): string | null {
+  // Split on both separator styles so a path never survives as a name.
+  const basename = value.split(/[/\\]/).pop() ?? '';
+  const cleaned = basename
+    // Control characters, including NUL, CR and LF.
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/["'`]/g, '')
+    .replace(/[<>:|?*]/g, '')
+    .replace(/^[.\s]+/, '')
+    .trim();
+  if (cleaned.length === 0 || cleaned === '.' || cleaned === '..') {
+    return null;
+  }
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(cleaned)) {
+    return null;
+  }
+  return cleaned.slice(0, 120);
+}
+
 /** Extract a filename from a `Content-Disposition` header, when present. */
 export function extractFilename(header: string | null): string | null {
   if (!header) {
@@ -209,13 +236,13 @@ export function extractFilename(header: string | null): string | null {
   const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
   if (utf8Match?.[1]) {
     try {
-      return decodeURIComponent(utf8Match[1].trim());
+      return sanitizeDownloadFilename(decodeURIComponent(utf8Match[1].trim()));
     } catch {
       return null;
     }
   }
   const match = /filename="?([^";]+)"?/i.exec(header);
-  return match?.[1] ? match[1].trim() : null;
+  return match?.[1] ? sanitizeDownloadFilename(match[1].trim()) : null;
 }
 
 /** Trigger a browser download for a binary API response. */

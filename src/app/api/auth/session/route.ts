@@ -6,6 +6,7 @@ import {
 } from '@/lib/auth/cookies';
 import { resolveSession } from '@/lib/auth/session';
 import { errorResponse, jsonResponse } from '@/lib/http/responses';
+import { withServerFailureHandling } from '@/lib/http/server-failure';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,8 +16,14 @@ export const dynamic = 'force-dynamic';
  * Restores the session from the HttpOnly cookies. A rejected access token
  * triggers exactly one refresh attempt (and one `/api/me/` retry) before the
  * caller is told the session is gone.
+ *
+ * A read, so no mutation guard applies.
  */
 export async function GET(request: Request): Promise<Response> {
+  return withServerFailureHandling('GET /api/auth/session', () => handleSession(request));
+}
+
+async function handleSession(request: Request): Promise<Response> {
   const resolution = await resolveSession({
     accessToken: readAccessToken(request),
     refreshToken: readRefreshToken(request),

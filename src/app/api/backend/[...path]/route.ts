@@ -8,6 +8,8 @@ import {
 import { buildBackendUrl } from '@/lib/auth/proxy-path';
 import { BACKEND_API_PREFIX, getBackendApiUrl } from '@/lib/config/env';
 import { errorResponse } from '@/lib/http/responses';
+import { sameOriginRejectionResponse } from '@/lib/http/same-origin';
+import { withServerFailureHandling } from '@/lib/http/server-failure';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,8 +116,26 @@ function buildProxyResponse(
  *
  * Token endpoints (`auth/login`, `auth/refresh`) are blocked here so they can
  * only be reached through the dedicated auth route handlers.
+ *
+ * State-changing methods additionally pass the same-origin guard, so a request
+ * triggered by another site is rejected here and never forwarded to Django.
+ * `GET` and `HEAD` are unaffected.
  */
 async function handleProxyRequest(
+  request: Request,
+  context: RouteContext,
+): Promise<Response> {
+  const crossSite = sameOriginRejectionResponse(request);
+  if (crossSite) {
+    return crossSite;
+  }
+
+  return withServerFailureHandling(`/api/backend ${request.method}`, () =>
+    forwardRequest(request, context),
+  );
+}
+
+async function forwardRequest(
   request: Request,
   context: RouteContext,
 ): Promise<Response> {
