@@ -300,6 +300,158 @@ identically. Shared behaviour:
 - Visiting `/login` with a valid session leads to `/dashboard` (no redirect loops).
 - `/` immediately redirects to `/dashboard` or `/login` — there is no blank landing page.
 
+## Resources and Calendar (F2)
+
+`/resources` is the resource workspace the college schedules against: instructor
+resources, room resources and the calendar configuration. It is available to
+`COLLEGE_ADMIN`, `DEPARTMENT_ADMIN` and `SCHEDULER`. Viewers and instructors are
+refused, including on direct navigation.
+
+### Resource routes
+
+| Route | Records | Backend endpoint |
+| ----- | ------- | ---------------- |
+| `/resources` | Module overview (grouped links) | — |
+| `/resources/instructors` | Instructor profiles | `/api/backend/instructors/` |
+| `/resources/instructor-sharing` | Instructor sharing grants | `/api/backend/instructor-department-access/` |
+| `/resources/instructor-availability` | Hard availability windows | `/api/backend/instructor-availability/` |
+| `/resources/instructor-preferences` | Soft preferences | `/api/backend/instructor-preferences/` |
+| `/resources/teaching-assignments` | Component staffing | `/api/backend/teaching-assignments/` |
+| `/resources/room-types` | Room type vocabulary | `/api/backend/room-types/` |
+| `/resources/room-capabilities` | Room capability vocabulary | `/api/backend/room-capabilities/` |
+| `/resources/rooms` | Rooms | `/api/backend/rooms/` |
+| `/resources/room-sharing` | Room sharing grants | `/api/backend/room-department-access/` |
+| `/resources/room-capability-assignments` | Room ↔ capability links | `/api/backend/room-capability-assignments/` |
+| `/resources/room-availability` | Room availability windows | `/api/backend/room-availability/` |
+| `/resources/room-requirements` | Component room requirements | `/api/backend/teaching-component-room-requirements/` |
+| `/resources/room-requirement-capabilities` | Required capabilities | `/api/backend/teaching-component-capability-requirements/` |
+| `/resources/calendar` | Calendar overview (grid vs exceptions) | — |
+| `/resources/calendar/working-days` | Working days | `/api/backend/working-days/` |
+| `/resources/calendar/time-slots` | Time slots | `/api/backend/time-slots/` |
+| `/resources/calendar/breaks` | Break periods | `/api/backend/break-periods/` |
+| `/resources/calendar/exceptions` | Calendar exceptions | `/api/backend/calendar-exceptions/` |
+
+Every call goes through the F0 BFF proxy. The F2 layer reuses the same list page,
+form panel, table, toast and error normalization as F1 rather than duplicating them.
+
+### Role and write matrix
+
+| Resource | `COLLEGE_ADMIN` | `DEPARTMENT_ADMIN` | `SCHEDULER` |
+| -------- | --------------- | ------------------ | ----------- |
+| Instructor profile | all | own department | read only |
+| Instructor sharing grant | all | own instructors only, and only when another department can be named | read only |
+| Instructor availability / preferences | all | own instructors | read only |
+| Teaching assignment | all | components its department manages | read only |
+| Room type / capability vocabulary | create and edit | read only | read only |
+| Room | all | own department | read only |
+| Room sharing grant | all | own rooms only | read only |
+| Room capability assignment | all | own rooms | read only |
+| Room availability | all | own rooms | read only |
+| Teaching component room requirement | all | components its department manages | read only |
+| Required capability | all | requirements it manages | read only |
+| Working days / time slots / breaks | create and edit | read only | read only |
+| Calendar exception | every scope | non-college scopes whose target it owns | read only |
+
+Frontend checks are usability only. Django stays authoritative for ownership,
+sharing, eligibility, window overlap, capacity and exception scoping, and its
+errors are shown faithfully.
+
+### Ownership, sharing and read-only rows
+
+Instructors and rooms are department-owned with an explicit sharing scope:
+
+- **Private** — only the owning department may schedule the resource. Existing
+grants stay on file but are not effective, and are never deleted automatically.
+- **Selected departments** — departments with an active grant may schedule it.
+- **College-wide** — every active department may schedule it.
+
+Rows carry a badge: **Owned**, **Shared**, **College-wide**, **External owner** or
+**Read only**. A resource that is visible only because it teaches a joint course is
+labelled read-only, never shared, so nobody concludes it can be scheduled.
+
+Ownership is resolved from loaded collections rather than guessed: the nested
+summaries deliberately omit the owning department of a stage, group, component or
+room summary, so the screens join against the offerings, programs and rooms they
+already load.
+
+### Instructor account linking (backend limitation)
+
+`InstructorProfileWriteSerializer` accepts an optional `user` id, but the accepted
+backend exposes no administrative endpoint for listing eligible accounts. F2
+therefore:
+
+- never offers a free-form or guessed user id field;
+- creates instructors with `user` omitted, and omits it on every update so an
+existing link is preserved;
+- displays the linked account read-only when the API returns one;
+- explains the limitation in the UI.
+
+### Hard availability versus soft preference
+
+`InstructorAvailability` and `RoomAvailability` are **hard** recurring windows.
+No row for a weekday means availability is not configured there — never that the
+resource is free all day. `InstructorPreference` is **soft**: `PREFERRED` and
+`AVOID` guide scheduling, and an `AVOID` window is explicitly not an unavailable
+period. Both distinctions are stated in the forms.
+
+Both window tables share the same client checks (`start < end`, semester and
+weekday required); overlap detection stays on the backend, whose message is
+displayed.
+
+### Teaching assignments and room requirements
+
+A teaching assignment staffs a component and is written by the department that
+manages the component's offering. A component may hold at most one active primary
+instructor; the role is labelled and the backend refusal is shown if a second one
+is attempted — the UI never silently demotes the first. Instructor choices are
+narrowed to resources that look eligible (own, college-wide, or granted), and the
+server rechecks eligibility for every writer, including college administrators.
+
+A component has at most one room requirement. `expected_student_count`,
+`effective_minimum_capacity` and the required capability list are **derived by the
+server** and displayed read-only. Room capability assignments and required
+capabilities are relationship rows with no active flag: they are created or edited,
+never deleted, and no delete action exists anywhere.
+
+### Calendar: recurring grid versus dated exceptions
+
+- **Recurring grid** — working days, time slots and breaks repeat weekly per
+semester. Nothing auto-creates Sunday–Thursday rows. A slot must fit inside its
+working day and must not overlap an active slot or break; durations may vary and
+`duration_minutes` is derived. Narrowing a working day is rejected while active
+children fall outside it.
+- **Dated exceptions** — one date, full-day (no times at all) or partial-day
+(both times), scoped to college, department, instructor, room or student group.
+Only the target matching the selected scope is submitted. `INSTRUCTOR_ABSENCE` is
+pinned to the instructor scope and `ROOM_CLOSURE` to the room scope, and the scope
+is derived when such a type is chosen. When a semester has configured dates the
+date is checked against them; a semester without dates imposes no client limit.
+
+All times are recurring wall-clock values in the college week (Sunday = 0). No
+timezone conversion is ever applied, and dates remain date-only.
+
+### Lifecycle: still no deletes
+
+The F2 endpoints inherit the same no-delete surface. Records with `is_active` use
+**Activate** / **Deactivate** behind the same confirmation that states the record is
+not deleted; relationship rows (room capability assignments, required
+capabilities) offer create and edit only, and no remove action is rendered.
+
+### Documented filters
+
+F2 uses only the exact-match filters the backend publishes for each viewset
+(`primary_department`, `sharing_scope`, `instructor`, `semester`, `room`,
+`working_day`, `date`, `scope_type`, ...). Local text search stays client-side and
+no undocumented parameter is ever sent.
+
+### Resource tests
+
+115 tests cover the 17 endpoint paths, the read/write DTO split, documented
+filters, error preservation (including window overlap, ineligible instructor and
+second primary instructor), the capability matrix, decimal-safe workload limits,
+time-window validation, calendar scope/type pairing, full-day versus partial-day
+exceptions and the read-only shared-resource UI.
+
 ## Project structure
 
 ```
@@ -309,22 +461,27 @@ src/
     (app)/                    authenticated shell: dashboard, academic, resources,
                               scheduling, reports, audit, my-timetable, forbidden
       academic/               F1 academic administration routes (server pages)
+      resources/              F2 resource and calendar routes (server pages)
     api/auth/{login,logout,session}/
     api/backend/[...path]/    BFF proxy
     error.tsx, not-found.tsx, loading.tsx, page.tsx
   components/
     academic/                 shared academic UI (resource page, data table, form
                               panel, screens/ for the eleven entities)
+    resources/                F2 resource screens and calendar screens
     app-shell, auth, providers (session + toast), ui primitives
   lib/
     academic/                 types, api, permissions, forms, validation,
                               formatters, constants, collection hook
-    api/                      browser client + ApiError normalization
+    resources/                instructor/room/calendar types, api, permissions,
+                              forms, validation, formatters, calendar rules
+    api/                      browser client + ApiError normalization + generic
+                              CRUD helpers
     auth/                     cookies, backend calls, session resolution, types
     navigation/               navigation config + safe redirect helpers
     config/env.ts             server-only environment access
   proxy.ts                    optimistic route protection
-  test/                       fetch mock, jsdom setup, academic fixtures
+  test/                       fetch mock, jsdom setup, academic + resource fixtures
 ```
 
 ## Frontend phase roadmap
@@ -332,16 +489,18 @@ src/
 | Phase | Scope |
 | ----- | ----- |
 | **F0** | Foundation, environment config, BFF auth (login/logout/session/refresh), application shell, role-aware navigation, protected routes, base UI states, dashboard, testing foundation, docs. |
-| **F1 (this branch)** | Academic Administration: colleges, departments, academic years, semesters, study programs, stages, student groups, courses, course offerings, teaching components and component/group links, with capability-aware read/write UI and no hard deletes. |
-| F2 | Resources: instructors, instructor availability/preferences, teaching assignments, rooms, room capabilities and availability, working days, time slots, breaks, calendar exceptions. |
+| **F1** | Academic Administration: colleges, departments, academic years, semesters, study programs, stages, student groups, courses, course offerings, teaching components and component/group links, with capability-aware read/write UI and no hard deletes. |
+| **F2 (this branch)** | Resources and Calendar Administration: instructor profiles, instructor sharing, hard availability, soft preferences, teaching assignments, room types and capabilities, rooms, room sharing, capability assignments, room availability, component room requirements and required capabilities, working days, time slots, breaks and dated calendar exceptions. |
 | F3 | Calendar, schedule generation, manual timetable editing, workflow. |
 | F4 | Reports, analytics, imports/exports (XLSX/PDF/multipart via the F0 proxy). |
 | F5 | Deployment hardening, Content-Security-Policy, mobile integration. |
 
 F0 intentionally ships no domain CRUD tables and no fake schedule data. F1 ships the
-academic administration module only; scheduling, workflow, analytics, audit,
-imports and exports remain in F3–F5. No screen is populated with invented data: an
-empty backend produces a real empty state.
+academic administration module and F2 the resource and calendar administration
+module. Scheduling, workflow, analytics, audit, imports and exports remain in
+F3–F5, and no timetable grid is drawn in F2: working days, time slots and breaks
+are configuration lists. No screen is populated with invented data: an empty
+backend produces a real empty state.
 
 ## Security notes
 

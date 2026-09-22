@@ -63,6 +63,7 @@ export type FieldKind =
   | 'integer'
   | 'decimal'
   | 'date'
+  | 'time'
   | 'checkbox';
 
 export type FormValues = Record<string, string>;

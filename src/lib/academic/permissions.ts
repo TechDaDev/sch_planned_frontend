@@ -149,12 +149,23 @@ export function canManageComponentGroup(
 
 // --- Row annotations ------------------------------------------------------
 
-export type RowAccessBadge = 'read-only' | 'joint' | 'external-manager';
+export type RowAccessBadge =
+  | 'read-only'
+  | 'joint'
+  | 'external-manager'
+  | 'external-owner'
+  | 'owned'
+  | 'shared'
+  | 'college-wide';
 
 export const ROW_ACCESS_LABELS: Record<RowAccessBadge, string> = {
   'read-only': 'Read only',
   joint: 'Joint',
   'external-manager': 'External manager',
+  'external-owner': 'External owner',
+  owned: 'Owned',
+  shared: 'Shared',
+  'college-wide': 'College-wide',
 };
 
 export function rowAccessLabel(badge: RowAccessBadge): string {

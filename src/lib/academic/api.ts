@@ -9,8 +9,13 @@
  * delete helper (the backend answers HTTP 405 for `DELETE`).
  */
 
-import { ApiClientError } from '@/lib/api/errors';
-import { apiFetch } from '@/lib/api/client';
+import {
+  collectionPath,
+  createRecord,
+  getRecord,
+  listCollection,
+  patchRecord,
+} from '@/lib/api/resource';
 import type {
   AcademicYear,
   AcademicYearWrite,
@@ -56,56 +61,31 @@ export type AcademicEndpoint =
 
 /** Join an endpoint and an optional primary key into a proxy-relative path. */
 export function resourcePath(endpoint: AcademicEndpoint, id?: number): string {
-  return id === undefined ? endpoint : `${endpoint}/${id}`;
+  return collectionPath(endpoint, id);
 }
 
-function unexpectedPayload(endpoint: string): ApiClientError {
-  return new ApiClientError({
-    status: 500,
-    code: 'unexpected_response',
-    detail: `The server returned an unexpected payload for "${endpoint}".`,
-  });
-}
-
-/**
- * Fetch a collection.
- *
- * Backend list endpoints are unpaginated arrays; a non-array payload is treated
- * as an unexpected response instead of being silently coerced.
- */
-export async function listResource<T>(
+/** Fetch a collection (unpaginated array). */
+export function listResource<T>(
   endpoint: AcademicEndpoint,
   signal?: AbortSignal,
 ): Promise<T[]> {
-  const payload = await apiFetch<unknown>(resourcePath(endpoint), { signal });
-  if (!Array.isArray(payload)) {
-    throw unexpectedPayload(endpoint);
-  }
-  return payload as T[];
+  return listCollection<T>(endpoint, { signal });
 }
 
-export async function getResource<T>(
+export function getResource<T>(
   endpoint: AcademicEndpoint,
   id: number,
   signal?: AbortSignal,
 ): Promise<T> {
-  const payload = await apiFetch<unknown>(resourcePath(endpoint, id), { signal });
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw unexpectedPayload(endpoint);
-  }
-  return payload as T;
+  return getRecord<T>(endpoint, id, signal);
 }
 
-export async function createResource<TRead>(
+export function createResource<TRead>(
   endpoint: AcademicEndpoint,
   payload: unknown,
   signal?: AbortSignal,
 ): Promise<TRead> {
-  return apiFetch<TRead>(resourcePath(endpoint), {
-    method: 'POST',
-    json: payload,
-    signal,
-  });
+  return createRecord<TRead>(endpoint, payload, signal);
 }
 
 /**
@@ -116,17 +96,13 @@ export async function createResource<TRead>(
  * college), and partial updates keep small edits from demanding fields the user
  * did not touch.
  */
-export async function patchResource<TRead>(
+export function patchResource<TRead>(
   endpoint: AcademicEndpoint,
   id: number,
   payload: unknown,
   signal?: AbortSignal,
 ): Promise<TRead> {
-  return apiFetch<TRead>(resourcePath(endpoint, id), {
-    method: 'PATCH',
-    json: payload,
-    signal,
-  });
+  return patchRecord<TRead>(endpoint, id, payload, signal);
 }
 
 // --- Typed helpers --------------------------------------------------------

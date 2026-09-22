@@ -137,7 +137,9 @@ export function FieldControl(props: FieldControlProps): React.ReactElement {
           <Input
             id={id}
             name={field.name}
-            type={field.kind === 'date' ? 'date' : 'text'}
+            type={
+              field.kind === 'date' ? 'date' : field.kind === 'time' ? 'time' : 'text'
+            }
             inputMode={
               field.kind === 'integer'
                 ? 'numeric'

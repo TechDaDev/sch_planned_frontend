@@ -16,6 +16,9 @@ export const PROXY_BASE_PATH = '/api/backend';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/** Exact-match query parameters supported by the backend's filter mixin. */
+export type QueryParams = Record<string, string | number | boolean | undefined | null>;
+
 export interface ApiFetchOptions {
   method?: HttpMethod;
   /** JSON request body (serialized with `content-type: application/json`). */
@@ -25,6 +28,8 @@ export interface ApiFetchOptions {
   headers?: Record<string, string>;
   signal?: AbortSignal;
   cache?: RequestCache;
+  /** Backend-documented exact filters; empty values are omitted entirely. */
+  query?: QueryParams;
 }
 
 export interface ApiDownload {
@@ -69,6 +74,31 @@ export function toProxyPath(path: string): string {
   }
 
   return `${PROXY_BASE_PATH}/${segments.map((segment) => encodeURIComponent(segment)).join('/')}`;
+}
+
+/**
+ * Build a query string from documented exact filters.
+ *
+ * `undefined`, `null` and empty values are omitted, so a filter control that is
+ * left at its default never sends a parameter the backend did not document.
+ */
+export function buildQueryString(query?: QueryParams): string {
+  if (!query) {
+    return '';
+  }
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    const text = String(value);
+    if (text.length === 0) {
+      continue;
+    }
+    params.set(key, text);
+  }
+  const result = params.toString();
+  return result.length > 0 ? `?${result}` : '';
 }
 
 function buildRequestInit(options: ApiFetchOptions): RequestInit {
@@ -130,7 +160,10 @@ export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
-  const response = await fetch(toProxyPath(path), buildRequestInit(options));
+  const response = await fetch(
+    `${toProxyPath(path)}${buildQueryString(options.query)}`,
+    buildRequestInit(options),
+  );
   if (!response.ok) {
     const { error } = await readErrorPayload(response);
     throw new ApiClientError(error);
@@ -150,7 +183,10 @@ export async function apiFetchBinary(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<ApiDownload> {
-  const response = await fetch(toProxyPath(path), buildRequestInit(options));
+  const response = await fetch(
+    `${toProxyPath(path)}${buildQueryString(options.query)}`,
+    buildRequestInit(options),
+  );
   if (!response.ok) {
     const { error } = await readErrorPayload(response);
     throw new ApiClientError(error);
