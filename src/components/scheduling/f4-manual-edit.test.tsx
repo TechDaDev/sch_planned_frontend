@@ -518,6 +518,19 @@ describe('manual edit screen', () => {
     expect(await screen.findByText('This version cannot be edited')).toBeVisible();
   });
 
+  it('keeps a viewer read-only after a session is selected', async () => {
+    const user = userEvent.setup();
+    installFetchMock(baseRoutes({ account: VIEWER }));
+
+    renderScreen(<ManualEditScreen versionId={501} />);
+
+    await user.selectOptions(await screen.findByLabelText('Session to move'), '900');
+
+    expect(screen.getByRole('button', { name: 'Add to pending changes' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Validate proposal' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Apply validated proposal' })).toBeDisabled();
+  });
+
   it('refuses the screen to an instructor', async () => {
     installFetchMock(baseRoutes({ account: INSTRUCTOR }));
 
