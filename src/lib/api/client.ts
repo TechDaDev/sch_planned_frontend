@@ -130,6 +130,7 @@ function buildRequestInit(options: ApiFetchOptions): RequestInit {
 
 async function readErrorPayload(response: Response): Promise<{
   error: ApiError;
+  payload: unknown;
 }> {
   const contentType = response.headers.get('content-type') ?? '';
   let payload: unknown = null;
@@ -152,6 +153,7 @@ async function readErrorPayload(response: Response): Promise<{
       payload,
       response.headers.get('x-request-id'),
     ),
+    payload,
   };
 }
 
@@ -165,8 +167,8 @@ export async function apiFetch<T>(
     buildRequestInit(options),
   );
   if (!response.ok) {
-    const { error } = await readErrorPayload(response);
-    throw new ApiClientError(error);
+    const { error, payload } = await readErrorPayload(response);
+    throw new ApiClientError(error, payload);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -188,8 +190,8 @@ export async function apiFetchBinary(
     buildRequestInit(options),
   );
   if (!response.ok) {
-    const { error } = await readErrorPayload(response);
-    throw new ApiClientError(error);
+    const { error, payload } = await readErrorPayload(response);
+    throw new ApiClientError(error, payload);
   }
   return {
     blob: await response.blob(),

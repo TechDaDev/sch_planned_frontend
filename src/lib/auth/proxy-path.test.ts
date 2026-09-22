@@ -77,7 +77,7 @@ describe('buildBackendUrl', () => {
     const result = buildBackendUrl(BACKEND, PREFIX, ['academics', 'rooms']);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.url.toString()).toBe('http://127.0.0.1:8000/api/academics/rooms');
+      expect(result.url.toString()).toBe('http://127.0.0.1:8000/api/academics/rooms/');
       expect(result.url.origin).toBe(new URL(BACKEND).origin);
     }
   });
@@ -86,7 +86,29 @@ describe('buildBackendUrl', () => {
     const result = buildBackendUrl('http://backend.internal:9000/', PREFIX, ['me']);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.url.toString()).toBe('http://backend.internal:9000/api/me');
+      expect(result.url.toString()).toBe('http://backend.internal:9000/api/me/');
+    }
+  });
+
+  it('addresses every Django route with its trailing slash', () => {
+    // Django defines all of these with a trailing slash; a slashless request
+    // would be answered with a redirect that the proxy does not follow, and a
+    // POST would be refused outright while running with DEBUG enabled.
+    for (const segments of [
+      ['colleges'],
+      ['colleges', '7'],
+      ['scheduling', 'validate'],
+      ['scheduling', 'generate-college'],
+      ['schedules', 'generate-department-draft'],
+      ['schedules', '300', 'versions'],
+      ['schedule-versions', '501', 'entries'],
+    ]) {
+      const result = buildBackendUrl(BACKEND, PREFIX, segments);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.url.pathname.endsWith('/')).toBe(true);
+        expect(result.url.pathname).toBe(`/api/${segments.join('/')}/`);
+      }
     }
   });
 

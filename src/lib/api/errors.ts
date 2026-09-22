@@ -191,8 +191,17 @@ export class ApiClientError extends Error implements ApiError {
   readonly code?: string;
   readonly requestId?: string;
   readonly fieldErrors?: Record<string, string[]>;
+  /**
+   * Structured backend body, retained as received.
+   *
+   * Normalization intentionally keeps only user-facing strings, but a scheduling
+   * refusal (HTTP 409) carries validation and generation issues that the UI must
+   * render instead of a generic conflict message. The payload is read through an
+   * explicit type guard, never rendered directly.
+   */
+  readonly payload?: unknown;
 
-  constructor(error: ApiError) {
+  constructor(error: ApiError, payload?: unknown) {
     super(error.detail);
     this.name = 'ApiClientError';
     this.status = error.status;
@@ -200,6 +209,7 @@ export class ApiClientError extends Error implements ApiError {
     this.code = error.code;
     this.requestId = error.requestId;
     this.fieldErrors = error.fieldErrors;
+    this.payload = payload;
   }
 
   toApiError(): ApiError {

@@ -109,7 +109,13 @@ export function buildBackendUrl(
   }
 
   const prefix = apiPrefix.endsWith('/') ? apiPrefix : `${apiPrefix}/`;
-  const url = new URL(`${prefix}${resolved.path}`, base);
+  // Django defines every route with a trailing slash, and the router generates
+  // its routes the same way. Forwarding the path without it would make Django
+  // answer with an APPEND_SLASH redirect that this proxy does not follow - and
+  // under DEBUG it refuses a POST outright, losing the body. Adding the slash
+  // here means the request reaches the view it was aimed at, on the first call.
+  const targetPath = resolved.path.endsWith('/') ? resolved.path : `${resolved.path}/`;
+  const url = new URL(`${prefix}${targetPath}`, base);
   if (url.origin !== base.origin) {
     return { ok: false, reason: 'invalid_path' };
   }

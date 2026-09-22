@@ -22,7 +22,11 @@ export interface ColumnSpec<TItem> {
 export interface DataTableProps<TItem> {
   columns: readonly ColumnSpec<TItem>[];
   items: readonly TItem[];
-  getRowKey: (item: TItem) => number;
+  /**
+   * Stable row key. `React.Key` rather than `number` because a session's key is
+   * its string `session_id`, which is not a database primary key.
+   */
+  getRowKey: (item: TItem) => React.Key;
   /** Accessible name of the table, rendered as a screen-reader caption. */
   caption: string;
   /** Rendered inside the last cell of every row. */

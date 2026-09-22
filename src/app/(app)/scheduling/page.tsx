@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
+import { SchedulingLandingScreen } from '@/components/scheduling/screens/scheduling-landing-screen';
 import { PageHeading } from '@/components/ui/page-heading';
-import { ModulePlaceholder } from '@/components/ui/states';
 
 export const metadata: Metadata = {
   title: 'Scheduling',
@@ -12,13 +12,9 @@ export default function SchedulingPage() {
     <div className="space-y-6">
       <PageHeading
         title="Scheduling"
-        description="Timetable generation runs and manual timetable editing."
+        description="Validate readiness, generate previews, store draft versions and inspect the resulting timetables."
       />
-      <ModulePlaceholder
-        phase="F3"
-        title="Scheduling workspace"
-        description="Start generation runs, review candidate timetables and adjust sessions manually."
-      />
+      <SchedulingLandingScreen />
     </div>
   );
 }

@@ -8,7 +8,12 @@ import {
 } from '@/test/fetch-mock';
 
 const BACKEND = 'http://backend.test';
-const ROOMS_URL = `${BACKEND}/api/academics/rooms`;
+/**
+ * Django defines every route with a trailing slash, so the proxy addresses it
+ * with one. The browser-facing path stays slashless: the client normalizes a
+ * proxy path into segments and the proxy composes the upstream URL.
+ */
+const ROOMS_URL = `${BACKEND}/api/academics/rooms/`;
 const REFRESH_URL = `${BACKEND}/api/auth/refresh/`;
 
 beforeEach(() => {
@@ -266,7 +271,7 @@ describe('binary and body handling', () => {
     const bytes = new Uint8Array([37, 80, 68, 70]); // %PDF
     installFetchMock([
       {
-        url: `${BACKEND}/api/reports/1/export`,
+        url: `${BACKEND}/api/reports/1/export/`,
         method: 'GET',
         handler: () =>
           binaryResponse(bytes, 'application/pdf', {
@@ -316,7 +321,7 @@ describe('binary and body handling', () => {
   it('keeps bodyless methods bodyless', async () => {
     const mock = installFetchMock([
       {
-        url: `${ROOMS_URL}/4`,
+        url: `${BACKEND}/api/academics/rooms/4/`,
         method: 'DELETE',
         handler: () => new Response(null, { status: 204 }),
       },

@@ -124,6 +124,12 @@ data (`/api/backend/academics/...`), so no UI code ever attaches a JWT manually.
 - The response is streamed, not JSON-parsed, and preserves `Content-Type` and
   `Content-Disposition`, so future XLSX/PDF/multipart endpoints work without
   re-architecting authentication.
+- Upstream paths are always addressed with the trailing slash Django defines.
+  The browser-facing path is normalized into segments, so `/api/backend/colleges`
+  becomes `/api/colleges/` upstream. Without that slash Django answers with an
+  `APPEND_SLASH` redirect the proxy does not follow, and while `DEBUG` is enabled
+  it refuses a `POST` outright — losing the request body. Every route in the
+  accepted backend, including the router-generated ones, ends with `/`.
 
 ### Browser API client
 
@@ -452,6 +458,200 @@ second primary instructor), the capability matrix, decimal-safe workload limits,
 time-window validation, calendar scope/type pairing, full-day versus partial-day
 exceptions and the read-only shared-resource UI.
 
+## Scheduling Workspace (F3)
+
+`/scheduling` is the operational workspace for validation, timetable generation
+and the persisted draft history. It is the first phase that talks to the
+solver-backed scheduling API.
+
+### What this phase is and is not
+
+F3 covers readiness validation, department and college preview generation,
+generate-and-persist drafts, the schedule/version history, both timetable viewer
+representations, snapshot rendering and version comparison. Everything the phase
+renders is read-only except the two generation actions.
+
+Explicitly **not** in F3, and left to F4:
+
+```
+manual schedule editing            drag-and-drop placement
+move room/time by hand             submit / review / approve / publish
+workflow validation                published timetable
+analytics dashboards               XLSX / PDF export
+semester-plan import               audit viewer
+```
+
+There is no drag handle, no "move session" control and no workflow button
+anywhere in the module, and no client-side solver: the engine is authoritative,
+and nothing is scheduled, repaired or moved in JavaScript.
+
+### Readiness is not feasibility
+
+`POST /api/scheduling/validate/` checks the **stored data** and returns `ready`,
+`summary` and `issues`. `ready = true` means only that no blocking `ERROR` was
+found; warnings never make a run unready. Validation does not place sessions,
+resolve collisions, assign rooms, prove feasibility or subtract calendar
+exceptions from the recurring weekly grid, so the UI says
+"Configuration is ready for generation." and never "This timetable is feasible."
+
+### Preview versus persisted draft — the critical distinction
+
+| | Preview | Draft |
+| --- | --- | --- |
+| Endpoint | `POST /api/scheduling/generate/`, `POST /api/scheduling/generate-college/` | `POST /api/schedules/generate-department-draft/`, `POST /api/schedules/generate-college-draft/` |
+| Writes | nothing (`persisted = false`) | a new immutable version |
+| Client supplies | semester, department, time limit | semester, department, time limit, notes |
+
+**Generate & Save Draft reruns generation server-side; it does not persist a
+client preview.** The draft endpoint runs the whole validated pipeline again and
+stores that result. The client never sends placements, a status or a version
+number — the request body is rejected by the backend if it contains them, and no
+code path in `src/lib/scheduling/` attaches a preview payload to a draft request.
+Regenerating the same semester and department appends V2, then V3, to the same
+logical schedule; it never overwrites an existing version, and the version number
+always comes from the response.
+
+### Department versus college generation
+
+| Operation | Endpoint | Who | Limits |
+| --- | --- | --- | --- |
+| Department validation | `scheduling/validate` (`DEPARTMENT`) | college admin any department, dept admin/scheduler own | — |
+| College validation | `scheduling/validate` (`COLLEGE`) | college admin only | — |
+| Department preview | `scheduling/generate` | as department validation | 1–120 s, default 30 |
+| College preview | `scheduling/generate-college` | college admin only | 1–300 s, default 60 |
+| Department draft | `schedules/generate-department-draft` | as department validation | 1–120 s, default 30 |
+| College draft | `schedules/generate-college-draft` | college admin only | 1–300 s, default 60 |
+
+A `COLLEGE` validation body omits `department`; a `DEPARTMENT` body requires it.
+The college generation and college draft bodies never carry `department` or
+`scope`, and the only solver input the UI exposes is `max_time_seconds` — the
+seed, the worker count, solver logging and reservations are fixed server-side and
+are never sent.
+
+### Solver result semantics
+
+| Status | Meaning shown to the user |
+| --- | --- |
+| `OPTIMAL` | A valid timetable was produced and proven optimal. |
+| `FEASIBLE` | A valid timetable was produced; optimality was not proven. |
+| `INFEASIBLE` | The solver proved that no timetable exists. |
+| `MODEL_INVALID` | The solver model was invalid, so no timetable was produced. |
+| `UNKNOWN` | The solve ended without a successful result. |
+
+`FEASIBLE` is never displayed as `OPTIMAL`, and `INFEASIBLE` is never presented
+as a server crash. No success percentage is invented: the backend streams no
+progress, so the UI shows an active-run indicator, the scope and the semester
+instead.
+
+Generation outcomes are told apart, not flattened:
+
+| Situation | Response | UI |
+| --- | --- | --- |
+| Not ready | 409 `PRE_SCHEDULING_VALIDATION_FAILED` | "Configuration not ready" + validation issues |
+| No candidates | 409 `CANDIDATE_BUILD_FAILED` | "No placement candidates" + generation issues |
+| Incomplete persistence | 409 `GENERATION_RESULT_INCOMPLETE` | "Generation result incomplete", nothing stored |
+| Solver found nothing | 200 `generated: false` | "No timetable produced" (a completed run) |
+| Malformed request | 400 | "Request invalid" + rejected fields |
+| Out of scope / role denied | 403, 404 | "Permission denied" / "Not found" |
+
+A 409 body is structured, so the normalized error keeps the raw payload and the
+panel renders its `reason`, issues and diagnostics. Issue codes are always shown,
+filterable by **Errors / Warnings / All**. `details` is rendered as primitive
+key/value text only — backend data can never become markup.
+
+### Timetable visualization
+
+The same viewer renders a preview and a stored version, from one normalized
+`TimetableSession` produced by either `sessionFromPlacement` or
+`sessionFromEntry`. `source` keeps `PREVIEW` and `PERSISTED` apart so a preview is
+never labelled as a stored version.
+
+- **Grid** — the college week, Sunday to Thursday, never Monday-first. Each
+event is positioned by its real start and end times, so periods of different
+durations are drawn at their true size and a period is never assumed to be one
+hour. A multi-period session is one event spanning its whole interval, not one
+card per slot.
+- **List** — the same sessions as day/time/course/component/room/instructors/
+groups text, plus a managing-department column on a college timetable. This is
+the accessible representation, and both views are one click apart.
+- **Filters** — department, course, instructor, student group, room and weekday,
+built from the sessions actually present. Filtering is presentation only: the
+preview endpoints accept no filters and a stored version is immutable, so no
+filter ever becomes a query parameter or a request.
+- A joint session serving several student groups stays **one** session listing
+every group; it is never duplicated per group or per department.
+
+### Schedule and version immutability
+
+Schedules and versions are history, so `src/lib/scheduling/api.ts` exposes no
+update or delete helper for either, and the UI renders no such control. The list
+shows scope, semester, department (`College-wide` for a college schedule, never a
+fabricated department), version count, latest version number and status, and the
+timestamps; the detail page shows the identity, the newest version and the
+publication pointer when the backend reports one; the version page shows
+provenance, solver metadata and workflow metadata as read-only values. Workflow
+states (`DRAFT`, `SUBMITTED`, `REVIEWED`, `APPROVED`, `PUBLISHED`) and sources
+(`DEPARTMENT_GENERATION`, `COLLEGE_GENERATION`, `MANUAL_EDIT`) are all displayed
+correctly even though F3 cannot create them.
+
+### Snapshot rendering
+
+A persisted `ScheduleEntry` stores its own labels. The version view renders those
+stored values, so renaming a course, room, department, instructor or student group
+afterwards does not rewrite what a stored version shows. Live academic and
+resource collections are used for selectors and filters only, never to replace a
+version's snapshot.
+
+### Version comparison
+
+Comparison is offered between two versions of the **same** logical schedule,
+selected from that schedule's history, because sessions of different schedules are
+unrelated and pairing them on `session_id` would report nonsense (the comparison
+also throws if the two sides do not belong to one schedule). Sessions are paired on
+`session_id` and classified as `UNCHANGED`, `TIME_CHANGED`, `ROOM_CHANGED`,
+`TIME_AND_ROOM_CHANGED`, `CONTENT_CHANGED`, `PENALTY_CHANGED`, `ADDED` or
+`REMOVED`. A changed `candidate_id` alone is not a physical difference. Each row
+shows **Before** and **After** from the two versions' own snapshots, with no
+mutation action.
+
+### Role matrix
+
+| Role | Validate | Preview | Draft | History / compare |
+| --- | --- | --- | --- | --- |
+| `COLLEGE_ADMIN` | college + any department | department + college | department + college | all visible schedules |
+| `DEPARTMENT_ADMIN` | own department | own department | own department | own department |
+| `SCHEDULER` | own department | own department | own department | own department |
+| `VIEWER` | — | — | — | own department, read-only |
+| `INSTRUCTOR` | — | — | — | — |
+
+A department-scoped account with `department = null` fails closed everywhere: it
+is never treated as a college administrator and never falls back to "all
+departments". A scoped role's department is shown as a fixed value rather than a
+selector, so a foreign department cannot be chosen even transiently.
+
+### Scheduling routes
+
+| Route | Purpose |
+| --- | --- |
+| `/scheduling` | Role-appropriate actions (no invented statistics) |
+| `/scheduling/readiness` | Validate readiness for a semester and scope |
+| `/scheduling/generate` | Preview a timetable and generate/store a draft |
+| `/scheduling/schedules` | Persisted schedules with filters |
+| `/scheduling/schedules/[id]` | Schedule identity, newest version, history, comparison |
+| `/scheduling/versions/[id]` | Version provenance, solver metadata, stored timetable |
+| `/scheduling/compare` | Compare two versions of one schedule |
+
+### Scheduling tests
+
+154 tests cover the ten endpoint paths and their exact bodies (including
+"no unsupported solver field" and "no placement in a draft request"), the full
+permission matrix including departmentless accounts, the readiness payload rules,
+preview outcomes (`generated: true`, `generated: false`, both 409 reasons),
+solver-status wording, draft persistence and version numbering, snapshot entry
+rendering against a renamed live course, the eight comparison classes, the
+same-schedule guard, grid ordering and variable durations, the accessible list,
+the filters and the absence of any drag or workflow affordance.
+
 ## Project structure
 
 ```
@@ -462,6 +662,8 @@ src/
                               scheduling, reports, audit, my-timetable, forbidden
       academic/               F1 academic administration routes (server pages)
       resources/              F2 resource and calendar routes (server pages)
+      scheduling/             F3 readiness, generate, schedules, versions and
+                              compare routes (server pages)
     api/auth/{login,logout,session}/
     api/backend/[...path]/    BFF proxy
     error.tsx, not-found.tsx, loading.tsx, page.tsx
@@ -469,19 +671,25 @@ src/
     academic/                 shared academic UI (resource page, data table, form
                               panel, screens/ for the eleven entities)
     resources/                F2 resource screens and calendar screens
+    scheduling/               F3 timetable grid/list/filters, validation issues,
+                              generation report, version comparison, screens/
     app-shell, auth, providers (session + toast), ui primitives
   lib/
     academic/                 types, api, permissions, forms, validation,
                               formatters, constants, collection hook
     resources/                instructor/room/calendar types, api, permissions,
                               forms, validation, formatters, calendar rules
+    scheduling/               scheduling types, api, permissions, normalization,
+                              comparison, outcome classification, formatters,
+                              constants, single-record hook
     api/                      browser client + ApiError normalization + generic
                               CRUD helpers
     auth/                     cookies, backend calls, session resolution, types
     navigation/               navigation config + safe redirect helpers
     config/env.ts             server-only environment access
   proxy.ts                    optimistic route protection
-  test/                       fetch mock, jsdom setup, academic + resource fixtures
+  test/                       fetch mock, jsdom setup, academic + resource +
+                              scheduling fixtures
 ```
 
 ## Frontend phase roadmap
@@ -490,17 +698,18 @@ src/
 | ----- | ----- |
 | **F0** | Foundation, environment config, BFF auth (login/logout/session/refresh), application shell, role-aware navigation, protected routes, base UI states, dashboard, testing foundation, docs. |
 | **F1** | Academic Administration: colleges, departments, academic years, semesters, study programs, stages, student groups, courses, course offerings, teaching components and component/group links, with capability-aware read/write UI and no hard deletes. |
-| **F2 (this branch)** | Resources and Calendar Administration: instructor profiles, instructor sharing, hard availability, soft preferences, teaching assignments, room types and capabilities, rooms, room sharing, capability assignments, room availability, component room requirements and required capabilities, working days, time slots, breaks and dated calendar exceptions. |
-| F3 | Calendar, schedule generation, manual timetable editing, workflow. |
-| F4 | Reports, analytics, imports/exports (XLSX/PDF/multipart via the F0 proxy). |
+| **F2** | Resources and Calendar Administration: instructor profiles, instructor sharing, hard availability, soft preferences, teaching assignments, room types and capabilities, rooms, room sharing, capability assignments, room availability, component room requirements and required capabilities, working days, time slots, breaks and dated calendar exceptions. |
+| **F3 (this branch)** | Scheduling Workspace: readiness validation, department and college preview generation, generate-and-persist department and college drafts, persisted schedule list and detail, immutable version history, persisted version timetable view and version-to-version comparison. |
+| F4 | Manual timetable editing and the workflow, reports, analytics, imports/exports (XLSX/PDF/multipart via the F0 proxy) and the published timetable. |
 | F5 | Deployment hardening, Content-Security-Policy, mobile integration. |
 
 F0 intentionally ships no domain CRUD tables and no fake schedule data. F1 ships the
-academic administration module and F2 the resource and calendar administration
-module. Scheduling, workflow, analytics, audit, imports and exports remain in
-F3–F5, and no timetable grid is drawn in F2: working days, time slots and breaks
-are configuration lists. No screen is populated with invented data: an empty
-backend produces a real empty state.
+academic administration module, F2 the resource and calendar administration module
+and F3 the scheduling workspace. Manual schedule editing, the submit/review/approve/
+publish workflow, the published timetable, analytics, audit, imports and exports
+remain in F4–F5. No screen is populated with invented data: an empty backend
+produces a real empty state, and F3 draws no timetable until a preview is solved or
+a version is stored.
 
 ## Security notes
 
@@ -523,3 +732,12 @@ npm run test:run
 npm run build
 npm audit
 ```
+
+The suite currently reports **471 tests in 31 files**, covering F0 (auth, proxy,
+navigation, roles), F1 (academic administration), F2 (resources and calendar) and
+F3 (scheduling workspace). F1 and F2 regression tests are kept intact and are
+ever weakened to accommodate a later phase.
+
+`npm ci` reports Node engine warnings on this machine (Node 22.22.1 installed;
+Node 24 LTS is recommended and is what `engines` prefers). The warnings are
+non-blocking while every gate above passes.
