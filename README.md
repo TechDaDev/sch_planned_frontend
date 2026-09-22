@@ -709,7 +709,16 @@ cleared so nothing is resubmitted blindly. Applying stores a **new immutable
 `MANUAL_EDIT` version**; the edited version is never modified.
 
 Editing is offered only for the newest `DRAFT` version of a schedule the caller
-manages. An unknown status, scope or latest-state fails closed.
+manages. An unknown status, scope or latest-state fails closed — the newest-version
+question is answered by a second request, and the editor stays locked until that
+answer arrives rather than assuming the version is current.
+
+A role that may not propose an edit (viewer, instructor) and any version that is not
+editable keep the page fully readable — the stored timetable, its snapshots and the
+pending table are all shown — but **every** editing control is inert: the session
+picker, the period checkboxes, the room picker, the notes field and all three actions
+are disabled, and no validate or apply request can be sent from that state. The page
+states which of the two reasons applies.
 
 ### Workflow: four explicit steps, one at a time
 

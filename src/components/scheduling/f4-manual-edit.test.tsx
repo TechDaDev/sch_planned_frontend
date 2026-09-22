@@ -173,18 +173,31 @@ function renderScreen(element: React.ReactElement) {
  * Select the stored session, then choose one period of one weekday and add the change
  * to the batch. The stored entry occupies Sunday periods 31 and 32, so a Monday period
  * is always a real move.
+ *
+ * The editor unlocks only once the schedule history has confirmed the newest version,
+ * so the test waits for that exactly as a scheduler would.
  */
 async function addPendingChange(
   user: ReturnType<typeof userEvent.setup>,
   options: { day?: string; period?: RegExp; room?: string } = {},
 ) {
-  await user.selectOptions(await screen.findByLabelText('Session to move'), '900');
+  await waitFor(() => {
+    expect(screen.getByLabelText('Session to move')).toBeEnabled();
+  });
+  await user.selectOptions(screen.getByLabelText('Session to move'), '900');
   const group = screen.getByRole('group', { name: options.day ?? 'Monday' });
   await user.click(within(group).getByLabelText(options.period ?? /Period 1/));
   if (options.room) {
     await user.selectOptions(screen.getByLabelText('Room'), options.room);
   }
   await user.click(screen.getByRole('button', { name: 'Add to pending changes' }));
+}
+
+/** Wait until the editor is unlocked, for tests that drive the form directly. */
+async function waitForEditableForm() {
+  await waitFor(() => {
+    expect(screen.getByLabelText('Session to move')).toBeEnabled();
+  });
 }
 
 function bodyOf(call: { init: RequestInit }): Record<string, unknown> {
@@ -226,7 +239,8 @@ describe('manual edit screen', () => {
     ]);
 
     renderScreen(<ManualEditScreen versionId={501} />);
-    await user.selectOptions(await screen.findByLabelText('Session to move'), '900');
+    await waitForEditableForm();
+    await user.selectOptions(screen.getByLabelText('Session to move'), '900');
     await user.click(screen.getByRole('button', { name: 'Add to pending changes' }));
 
     expect(await screen.findByText(/This change requests nothing/i)).toBeVisible();
@@ -498,6 +512,9 @@ describe('manual edit screen', () => {
 
     expect(await screen.findByText('This version cannot be edited')).toBeVisible();
     expect(screen.getByText(/This version is SUBMITTED\./)).toBeVisible();
+    // A version that has already moved on is readable but not editable.
+    expect(await screen.findByLabelText('Session to move')).toBeDisabled();
+    expect(screen.getByLabelText('Room')).toBeDisabled();
   });
 
   it('refuses to edit a version that is not the newest one', async () => {
@@ -506,7 +523,8 @@ describe('manual edit screen', () => {
     renderScreen(<ManualEditScreen versionId={501} />);
 
     expect(await screen.findByText('This version cannot be edited')).toBeVisible();
-    // The controls stay inert until a session is chosen, so no proposal can be built.
+    expect(await screen.findByLabelText('Session to move')).toBeDisabled();
+    expect(screen.getByLabelText('Room')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Add to pending changes' })).toBeDisabled();
   });
 
@@ -529,6 +547,37 @@ describe('manual edit screen', () => {
     expect(screen.getByRole('button', { name: 'Add to pending changes' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Validate proposal' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Apply validated proposal' })).toBeDisabled();
+  });
+
+  it('makes every viewer control inert and sends no request at all', async () => {
+    const user = userEvent.setup();
+    const mock = installFetchMock([
+      ...baseRoutes({ account: VIEWER }),
+      { url: VALIDATE_URL, method: 'POST', handler: () => jsonResponse(manualEditValidation()) },
+      { url: APPLY_URL, method: 'POST', handler: () => jsonResponse(manualEditApplyResult()) },
+    ]);
+
+    renderScreen(<ManualEditScreen versionId={501} />);
+
+    // The page stays readable, and says why it is read-only.
+    expect(await screen.findByText('This version cannot be edited')).toBeVisible();
+    expect(screen.getAllByText(/read-only for your role/i).length).toBeGreaterThan(0);
+
+    // Every editing control is inert, including the placement controls.
+    expect(await screen.findByLabelText('Session to move')).toBeDisabled();
+    expect(screen.getAllByLabelText(/#1 Period 1/)[0]).toBeDisabled();
+    expect(screen.getByLabelText('Room')).toBeDisabled();
+    expect(screen.getByLabelText(/Notes/)).toBeDisabled();
+
+    // Attempting each interaction changes nothing and sends nothing.
+    await user.click(screen.getAllByLabelText(/#1 Period 1/)[0]!);
+    await user.click(screen.getByRole('button', { name: 'Add to pending changes' }));
+    await user.click(screen.getByRole('button', { name: 'Validate proposal' }));
+    await user.click(screen.getByRole('button', { name: 'Apply validated proposal' }));
+
+    expect(screen.getByText('Pending changes (0)')).toBeVisible();
+    expect(mock.countTo(VALIDATE_URL)).toBe(0);
+    expect(mock.countTo(APPLY_URL)).toBe(0);
   });
 
   it('refuses the screen to an instructor', async () => {

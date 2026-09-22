@@ -43,6 +43,7 @@ import {
 } from '@/lib/scheduling/manual-edit';
 import { sessionsFromEntries } from '@/lib/scheduling/normalization';
 import {
+  canManualEditSchedule,
   canManualEditVersion,
   canReadScheduleHistory,
   isDepartmentlessScopedUser,
@@ -199,7 +200,34 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
   const currentFingerprint = proposalFingerprint(pending);
   const validationStale =
     validation !== null && validatedFingerprint !== currentFingerprint;
+
+  /**
+   * Role-level edit capability, and whether this exact version is editable.
+   *
+   * A read-only role (viewer, instructor) never gets an editor, whatever has loaded,
+   * and a version that is not a DRAFT, not the newest one, outside the caller's scope
+   * or not yet measured stays locked as well. Every editing control is inert in that
+   * state, so a read-only role cannot build, validate or send a proposal at all.
+   */
+  const canProposeEdit = canManualEditSchedule(capability);
+  const editContext = {
+    scheduleScope: version?.schedule.scope ?? null,
+    scheduleDepartmentId: version?.schedule.department?.id ?? null,
+    status: version?.status ?? null,
+    isLatestVersion,
+  };
+  const mayEdit = version !== null && canManualEditVersion(capability, editContext);
+  const readOnly = !mayEdit;
+  /**
+   * The newest-version question is answered by a second request, so the editor stays
+   * locked until that answer arrives instead of guessing that this version is current.
+   */
+  const checkingHistory =
+    canProposeEdit && version !== null && historyCollection.status === 'loading';
+  const historyFailed = canProposeEdit && version !== null && historyCollection.error !== null;
+
   const canApply =
+    !readOnly &&
     validation !== null &&
     validation.valid &&
     !validationStale &&
@@ -235,6 +263,9 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
   }
 
   const addChange = () => {
+    if (readOnly) {
+      return;
+    }
     if (selectedSession === null) {
       setError('Select a session first.');
       return;
@@ -263,7 +294,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
   };
 
   const validate = async () => {
-    if (pending.length === 0) {
+    if (readOnly || pending.length === 0) {
       return;
     }
     setIsValidating(true);
@@ -294,7 +325,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
   };
 
   const apply = async () => {
-    if (!canApply) {
+    if (readOnly || !canApply) {
       return;
     }
     setIsApplying(true);
@@ -324,14 +355,6 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
     }
   };
 
-  const editContext = {
-    scheduleScope: version?.schedule.scope ?? null,
-    scheduleDepartmentId: version?.schedule.department?.id ?? null,
-    status: version?.status ?? null,
-    isLatestVersion,
-  };
-  const mayEdit = version !== null && canManualEditVersion(capability, editContext);
-
   return (
     <div className="space-y-6">
       <PageHeading
@@ -355,12 +378,19 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
       {version && !mayEdit ? (
         <Alert tone="warning" title="This version cannot be edited">
           <p>
-            Only the newest DRAFT version of a schedule you manage can be edited. This
-            version is {version.status}.
+            {!canProposeEdit
+              ? 'Proposing a manual edit belongs to the college administrator, department administrator and scheduler roles. The version and its snapshots stay readable here, but every editing control is read-only for your role.'
+              : historyFailed
+                ? 'The schedule history could not be loaded, so it is not known whether this is the newest version. Editing stays locked.'
+                : checkingHistory
+                  ? 'Checking the schedule history to confirm that this is the newest version. The editing controls stay locked until that check answers.'
+                  : `Only the newest DRAFT version of a schedule you manage can be edited. This version is ${version.status}.`}
           </p>
-          <Link className="mt-1 inline-block underline" href={SCHEDULING_ROUTES.schedules}>
-            Open schedule history
-          </Link>
+          {canProposeEdit && !checkingHistory && !historyFailed ? (
+            <Link className="mt-1 inline-block underline" href={SCHEDULING_ROUTES.schedules}>
+              Open schedule history
+            </Link>
+          ) : null}
         </Alert>
       ) : null}
 
@@ -409,6 +439,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
           <CardTitle>Stored timetable</CardTitle>
           <CardDescription>
             Select a session to move. Every value shown is the version’s own snapshot.
+            {readOnly ? ' The move controls are read-only for your role.' : ''}
           </CardDescription>
         </CardHeader>
         <CardBody className="space-y-4">
@@ -431,6 +462,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
                   id="manual-edit-entry"
                   className="mt-1 h-10 w-full max-w-2xl rounded-md border border-line bg-surface px-2 text-sm"
                   value={selectedEntryId === null ? '' : String(selectedEntryId)}
+                  disabled={readOnly}
                   onChange={(event) => {
                     setSelectedEntryId(event.target.value === '' ? null : Number(event.target.value));
                     setSelectedSlotIds([]);
@@ -459,6 +491,9 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
             Periods come from this semester’s configured teaching grid. The backend
             revalidates weekday, adjacency, duration, activity, availability and every
             collision.
+            {readOnly
+              ? ' These controls are read-only: your role may not propose a manual edit.'
+              : ''}
           </CardDescription>
         </CardHeader>
         <CardBody className="space-y-4">
@@ -481,6 +516,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={readOnly}
                           onChange={() => {
                             invalidateValidation();
                             setSelectedSlotIds((current) =>
@@ -521,6 +557,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
               id="manual-edit-room"
               className="mt-1 h-10 w-full max-w-2xl rounded-md border border-line bg-surface px-2 text-sm"
               value={roomChoice === 'keep' ? 'keep' : roomChoice === 'none' ? 'none' : String(roomChoice)}
+              disabled={readOnly}
               onChange={(event) => {
                 invalidateValidation();
                 const value = event.target.value;
@@ -545,7 +582,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
             </p>
           </div>
 
-          <Button onClick={addChange} disabled={selectedSession === null}>
+          <Button onClick={addChange} disabled={readOnly || selectedSession === null}>
             Add to pending changes
           </Button>
         </CardBody>
@@ -561,7 +598,9 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
         <CardBody className="space-y-4">
           {pending.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No pending change yet. Select a session, choose periods or a room, then add it.
+              {readOnly
+                ? 'No pending change can be built with a read-only role.'
+                : 'No pending change yet. Select a session, choose periods or a room, then add it.'}
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -598,6 +637,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
                         <Button
                           size="sm"
                           variant="ghost"
+                          disabled={readOnly}
                           onClick={() => {
                             invalidateValidation();
                             setPending((current) => removePendingChange(current, change.entryId));
@@ -625,7 +665,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
               className="mt-1 min-h-20 w-full rounded-md border border-line bg-surface px-3 py-2 text-sm"
               value={notes}
               maxLength={NOTES_MAX_LENGTH}
-              disabled={isApplying}
+              disabled={readOnly || isApplying}
               onChange={(event) => {
                 invalidateValidation();
                 setNotes(event.target.value);
@@ -638,7 +678,7 @@ export function ManualEditScreen({ versionId }: ManualEditScreenProps) {
               variant="secondary"
               onClick={() => void validate()}
               isLoading={isValidating}
-              disabled={pending.length === 0 || isValidating || isApplying}
+              disabled={readOnly || pending.length === 0 || isValidating || isApplying}
             >
               Validate proposal
             </Button>
