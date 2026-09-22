@@ -33,7 +33,8 @@ const EMPTY_FILTER: TimetableFilter = {
  *
  * Both representations render the same normalized sessions, so the accessible
  * list is never a reduced version of the grid. Nothing here is draggable and no
- * session can be moved: validated manual editing belongs to Frontend F4.
+ * session can be moved: validated manual editing is a separate form-first screen
+ * (`/scheduling/versions/[id]/edit`).
  */
 export function TimetableView({
   sessions,

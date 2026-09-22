@@ -1,12 +1,14 @@
 import {
   BarChart3,
   Boxes,
+  CalendarCheck,
   CalendarDays,
   CalendarRange,
   GraduationCap,
   LayoutDashboard,
   ScrollText,
   ShieldAlert,
+  Upload,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -21,5 +23,7 @@ export const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   reports: BarChart3,
   audit: ScrollText,
   timetable: CalendarDays,
+  published: CalendarCheck,
+  imports: Upload,
   forbidden: ShieldAlert,
 };

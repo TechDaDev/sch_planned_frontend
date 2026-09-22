@@ -652,6 +652,226 @@ rendering against a renamed live course, the eight comparison classes, the
 same-schedule guard, grid ordering and variable durations, the accessible list,
 the filters and the absence of any drag or workflow affordance.
 
+## Schedule Operations, Publication, Reporting, Import and Audit (F4)
+
+F4 makes a stored schedule usable: a draft can be edited and validated, moved
+through the review workflow, published as the official timetable, analysed,
+exported, initialized from a teaching-plan workbook and audited. Every one of
+those is a backend operation reached through the F0 BFF; nothing is computed in
+the browser.
+
+### What this phase is and is not
+
+- **Is** validated manual editing of placements, the four-step schedule workflow,
+the official published timetable, instructor My Timetable, version and published
+analytics, Excel and PDF exports, semester teaching-plan import and a read-only
+audit viewer.
+- **Is not** a drag-and-drop editor, a generic status editor, a client-side report
+engine, a spreadsheet parser or a second authorization layer. The backend
+re-validates every proposal, and Django stays the authority; the UI only decides
+what to offer.
+
+### F4 routes
+
+| Route | Purpose |
+| --- | --- |
+| `/scheduling/versions/[id]/edit` | Validated manual editing of one draft version |
+| `/scheduling/versions/[id]/workflow` | Workflow stage, validation report and the single next action |
+| `/published` | Official published timetable of a semester, plus its exports |
+| `/my-timetable` | The instructor's own published sessions |
+| `/reports` | Reports landing: the two report families |
+| `/reports/version/[id]` | Analytics and exports of one exact stored version |
+| `/reports/published` | Analytics and exports of the current publication |
+| `/imports/semester-plan` | Template download, workbook validation and apply |
+| `/audit` | Audit trail with the documented filters |
+| `/audit/[id]` | One audit event, including its metadata |
+
+### Manual editing is a batch, not a move
+
+The backend validates the whole `changes` list as **one final timetable state**.
+The page therefore builds a pending batch: select a session, tick the periods of
+one weekday, choose a room (`keep`, `none` or a room), add it, inspect the whole
+batch, then validate and apply. A swap is two changes in one proposal. Nothing is
+applied per move.
+
+Only placement moves. `entry_id`, `time_slot_ids` and `room_id` are the whole
+request shape, so the course, offering, component, instructors, student groups,
+session ordinal and every snapshot value cannot be edited by construction: there
+is no field for them.
+
+Any edit to the proposal — a period, a room, a pending row or the notes — drops a
+previous validation, so **Apply validated proposal** stays disabled until the
+server has seen the current batch. A `200` with `valid: false` is a normal result
+and is rendered as such; a `409` refusal
+(`MANUAL_EDIT_VALIDATION_FAILED`, `BASE_VERSION_NOT_DRAFT`, `STALE_BASE_VERSION`)
+is rendered with its reason, its help text and its issue list, and the batch is
+cleared so nothing is resubmitted blindly. Applying stores a **new immutable
+`MANUAL_EDIT` version**; the edited version is never modified.
+
+Editing is offered only for the newest `DRAFT` version of a schedule the caller
+manages. An unknown status, scope or latest-state fails closed.
+
+### Workflow: four explicit steps, one at a time
+
+The state machine is forward-only:
+
+```
+DRAFT -> SUBMITTED -> REVIEWED -> APPROVED -> PUBLISHED
+```
+
+Each transition is its own endpoint (`submit`, `review`, `approve`, `publish`)
+with an **empty body**: the stage comes from the URL, the actor from the session
+and the timestamp from the server. No status, actor, timestamp or
+published-version pointer is ever sent, there is no backward transition and no
+combined action. Submitting, reviewing, approving and publishing are therefore
+four separate confirmations, and the page never chains one into the next: after a
+successful call it reloads the version, the history and the validation and offers
+the next single action.
+
+- Submit: the newest draft of a schedule in scope (college administrator,
+department administrator, scheduler).
+- Review and Approve: a college administrator only, so a department administrator
+cannot review its own submission.
+- Publish: a college administrator on an APPROVED **college-wide** version. A
+department schedule can be approved and stops there; the publish control is not
+offered for it, which the UI states in words rather than failing on submit.
+
+Every confirmation names the schedule scope, the semester, the version number and
+the action. A refusal (409) is shown with its reason and help text, and a stale or
+wrong-stage refusal is stated as "reload before acting again" rather than retried.
+
+**Workflow validation** is a read: it measures the stored version against **today's
+configuration**, so a version that was valid when it was created can be reported as
+blocked later, because components, assignments, group links, room requirements,
+sharing, availability and the time grid may have changed since. Stored snapshots
+keep history readable; they do not keep a timetable valid forever.
+
+### Publication pointer versus PUBLISHED status
+
+Several versions may carry the `PUBLISHED` status over time. The
+**published-version pointer** decides which one is official right now, and only
+the pointer is read: the official timetable comes from
+`published-schedules/current?semester=`, never from a `status=PUBLISHED` query and
+never from a draft. A semester without a publication answers `404`, which is
+rendered as an explicit empty state ("A draft is not a publication") rather than
+falling back to anything.
+
+The official timetable renders the version's **own snapshot columns**, so renaming
+a live course, room, department, instructor or group does not rewrite what was
+published. A newer draft cannot replace it.
+
+`/my-timetable` reads the same endpoint with an explicit instructor scope and no
+export or report controls. An instructor never sees a department, room or
+group-level view of the semester.
+
+### Analytics
+
+Two endpoints, one report shape: the analytics of **one exact stored version**
+(any status) and the analytics of the **current publication**. Both are computed
+server-side; nothing is joined from live academic or resource data, and every
+descriptive value is a snapshot reference the response carried.
+
+- The summary block reports counts, minutes and hours. Scheduled minutes are the
+authoritative integer figure; hours are derived from them.
+- **Department scope** keeps `managed` (this department owns the teaching) and
+`participating` (joint sessions managed elsewhere that its groups attend) as
+separate figures. They are never added into one local load.
+- Instructor workload merges a shared instructor into **one** row, with the
+department codes they teach for.
+- **Room utilization** is the one figure measured against **current**
+configuration: the stored occupancy of the version divided by today's
+availability. When today's grid offers no denominator, the cell says
+"Current availability denominator unavailable" instead of showing `0%`. A
+percentage above 100 is reported above 100 and is never clamped, with a badge and
+a notice explaining that historical occupancy exceeds current availability.
+- There is **no composite score**: the backend computes none, and inventing one
+would be a fabricated metric. The quality block is a set of interpretable figures
+with the weekday and start-hour distributions shown as bars **and** as numbers.
+
+### Exports
+
+The workbook and the PDF are produced by the backend and streamed through the F0
+proxy as bytes, preserving `Content-Type` and `Content-Disposition`. Nothing is
+rebuilt in JavaScript: a client-side reimplementation would be a different
+document. The browser never attaches a token to a download.
+
+Failures are classified rather than collapsed: `403` (your role may not download
+this), `404` (not available to your account), PDF `503` (the server could not
+resolve a Unicode-capable font, with the note that the Excel export is
+unaffected), other `503`, and an aborted request. The saved filename prefers the
+backend's own `Content-Disposition` name and falls back to a documented name per
+export kind. A repeated click while a download is being prepared is disabled.
+
+### Semester teaching-plan import
+
+The import is **create-only** and target-scoped: the department and semester come
+from the form, never from the workbook, so a spreadsheet cannot choose where it
+lands. The workbook crosses the proxy as `multipart/form-data`; it is never
+converted to base64 JSON.
+
+The flow is validate-then-apply. Validation reports sheets, rows, errors and
+warnings with their **sheet, row and column** so the workbook can be fixed in the
+right place. Warnings never block an apply; errors do. Changing the file, the
+department or the semester discards the previous result, and the normal apply
+stays disabled until the workbook has been validated for the current selection.
+
+Apply **re-reads and fully re-validates** the workbook on the server, so the
+displayed result is guidance and never authority, and no validation token is sent
+because none exists. A refusal (`400`) is rendered with its structured issues.
+The success card lists the eight created record types and any warnings. The import
+creates semester teaching-plan setup only: it does not import placements, does not
+overwrite existing records and does not create instructors or rooms.
+
+### Audit viewer
+
+The trail is append-only and read-only from the client: there is no create, update
+or delete helper for an audit event anywhere in the layer, and the UI offers no
+write control. It covers the eight documented actions, and only the eight
+documented filters are ever sent — they narrow the authorized scope and can never
+widen it.
+
+Actor identity comes from the event's own snapshot columns (`username_snapshot`,
+`role_snapshot`), not from the current account, so the trail still reads correctly
+after a rename or a removal; a removed account is stated as such while its
+recorded identity stays readable. Metadata is rendered as text: only primitives
+become text, a nested value becomes bounded JSON, and a value is never interpreted
+as markup. College-wide operations store no department, so a department
+administrator never sees them, and an event outside the caller's scope answers as
+not found.
+
+### F4 role matrix
+
+| Capability | College admin | Department admin | Scheduler | Viewer | Instructor |
+| --- | --- | --- | --- | --- | --- |
+| Manual edit a newest draft | any schedule in scope | own department | own department | — | — |
+| Submit a version | any schedule | own department | own department | — | — |
+| Review / approve | yes | — | — | — | — |
+| Publish (college schedule only) | yes | — | — | — | — |
+| Official timetable | yes | yes | yes | yes | yes |
+| My Timetable | — | — | — | — | yes |
+| Version analytics and its export | yes | yes | yes | yes | — |
+| Published analytics and its export | yes | yes | yes | yes | — |
+| Semester plan import | chooses the department | own department only | — | — | — |
+| Audit trail | yes | own department | — | — | — |
+
+A department-scoped role without an assigned department fails closed on every one
+of these instead of falling back to "all departments".
+
+### F4 tests
+
+257 tests were added for F4 (728 in 42 files in total), covering: the endpoint
+paths and exact bodies of the manual-edit, workflow, publication, analytics, export,
+import and audit calls; the four-step state machine and its refusal copy; the
+permission matrix for every new capability; proposal building, meaningfulness and
+fingerprints; slot grouping and selection guidance; room-utilization denominators,
+never-clamped percentages and the absence of a composite score; export failure
+classification and byte-preserving downloads; import file guards, multipart bodies,
+validation currency and warning-versus-error handling; audit formatting, snapshot
+actors and safe metadata rendering; and the UI behaviour of every F4 screen,
+including single-action workflow confirmations, stale-validation gating, structured
+refusals, restricted states and the empty "not published" state. F1–F3 regression
+tests are kept intact and are never weakened to accommodate F4.
+
 ## Project structure
 
 ```
@@ -659,11 +879,18 @@ src/
   app/
     (public)/login/           unauthenticated layout + login page
     (app)/                    authenticated shell: dashboard, academic, resources,
-                              scheduling, reports, audit, my-timetable, forbidden
+                              scheduling, published, reports, imports, audit,
+                              my-timetable, forbidden
       academic/               F1 academic administration routes (server pages)
       resources/              F2 resource and calendar routes (server pages)
       scheduling/             F3 readiness, generate, schedules, versions and
-                              compare routes (server pages)
+                              compare routes, plus the F4 manual-edit and
+                              workflow routes (server pages)
+      published/              F4 official timetable
+      reports/                F4 reports landing, version report and published
+                              report
+      imports/                F4 semester teaching-plan import
+      audit/                  F4 audit trail and event detail
     api/auth/{login,logout,session}/
     api/backend/[...path]/    BFF proxy
     error.tsx, not-found.tsx, loading.tsx, page.tsx
@@ -673,6 +900,10 @@ src/
     resources/                F2 resource screens and calendar screens
     scheduling/               F3 timetable grid/list/filters, validation issues,
                               generation report, version comparison, screens/
+                              plus F4 manual edit, workflow panel, published
+                              timetable, analytics report, export buttons and
+                              semester-plan import
+    audit/                    F4 audit trail and event detail screens
     app-shell, auth, providers (session + toast), ui primitives
   lib/
     academic/                 types, api, permissions, forms, validation,
@@ -681,7 +912,9 @@ src/
                               forms, validation, formatters, calendar rules
     scheduling/               scheduling types, api, permissions, normalization,
                               comparison, outcome classification, formatters,
-                              constants, single-record hook
+                              constants, single-record hook, plus F4 workflow
+                              state machine, manual-edit proposal, analytics,
+                              export and import helpers and audit formatting
     api/                      browser client + ApiError normalization + generic
                               CRUD helpers
     auth/                     cookies, backend calls, session resolution, types
@@ -689,7 +922,7 @@ src/
     config/env.ts             server-only environment access
   proxy.ts                    optimistic route protection
   test/                       fetch mock, jsdom setup, academic + resource +
-                              scheduling fixtures
+                              scheduling + F4 fixtures
 ```
 
 ## Frontend phase roadmap
@@ -699,17 +932,17 @@ src/
 | **F0** | Foundation, environment config, BFF auth (login/logout/session/refresh), application shell, role-aware navigation, protected routes, base UI states, dashboard, testing foundation, docs. |
 | **F1** | Academic Administration: colleges, departments, academic years, semesters, study programs, stages, student groups, courses, course offerings, teaching components and component/group links, with capability-aware read/write UI and no hard deletes. |
 | **F2** | Resources and Calendar Administration: instructor profiles, instructor sharing, hard availability, soft preferences, teaching assignments, room types and capabilities, rooms, room sharing, capability assignments, room availability, component room requirements and required capabilities, working days, time slots, breaks and dated calendar exceptions. |
-| **F3 (this branch)** | Scheduling Workspace: readiness validation, department and college preview generation, generate-and-persist department and college drafts, persisted schedule list and detail, immutable version history, persisted version timetable view and version-to-version comparison. |
-| F4 | Manual timetable editing and the workflow, reports, analytics, imports/exports (XLSX/PDF/multipart via the F0 proxy) and the published timetable. |
+| **F3** | Scheduling Workspace: readiness validation, department and college preview generation, generate-and-persist department and college drafts, persisted schedule list and detail, immutable version history, persisted version timetable view and version-to-version comparison. |
+| **F4 (this branch)** | Schedule Operations, Publication, Reporting, Import and Audit: validated manual editing, the submit/review/approve/publish workflow, the official published timetable, instructor My Timetable, version and published analytics, Excel and PDF exports, semester teaching-plan import and the administrative audit viewer. |
 | F5 | Deployment hardening, Content-Security-Policy, mobile integration. |
 
 F0 intentionally ships no domain CRUD tables and no fake schedule data. F1 ships the
-academic administration module, F2 the resource and calendar administration module
-and F3 the scheduling workspace. Manual schedule editing, the submit/review/approve/
-publish workflow, the published timetable, analytics, audit, imports and exports
-remain in F4–F5. No screen is populated with invented data: an empty backend
-produces a real empty state, and F3 draws no timetable until a preview is solved or
-a version is stored.
+academic administration module, F2 the resource and calendar administration module,
+F3 the scheduling workspace and F4 the schedule operations, publication, reporting,
+import and audit module. Deployment hardening, a strict Content-Security-Policy and
+the mobile integration remain in F5. No screen is populated with invented data: an
+empty backend produces a real empty state, F3 draws no timetable until a preview is
+solved or a version is stored, and F4 shows nothing until the backend answers.
 
 ## Security notes
 
@@ -733,10 +966,11 @@ npm run build
 npm audit
 ```
 
-The suite currently reports **471 tests in 31 files**, covering F0 (auth, proxy,
-navigation, roles), F1 (academic administration), F2 (resources and calendar) and
-F3 (scheduling workspace). F1 and F2 regression tests are kept intact and are
-ever weakened to accommodate a later phase.
+The suite currently reports **728 tests in 42 files**, covering F0 (auth, proxy,
+navigation, roles), F1 (academic administration), F2 (resources and calendar),
+F3 (scheduling workspace) and F4 (operations, publication, reporting, import and
+audit). F1–F3 regression tests are kept intact and are never weakened to
+accommodate a later phase.
 
 `npm ci` reports Node engine warnings on this machine (Node 22.22.1 installed;
 Node 24 LTS is recommended and is what `engines` prefers). The warnings are

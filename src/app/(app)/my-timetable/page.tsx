@@ -1,24 +1,18 @@
 import type { Metadata } from 'next';
 
-import { PageHeading } from '@/components/ui/page-heading';
-import { ModulePlaceholder } from '@/components/ui/states';
+import { PublishedTimetableScreen } from '@/components/scheduling/published-timetable-screen';
 
 export const metadata: Metadata = {
   title: 'My Timetable',
 };
 
+/**
+ * The instructor's own teaching timetable.
+ *
+ * It reads the same published endpoint as the official timetable with an explicit
+ * instructor scope, so an instructor never sees a group, room or department view of
+ * the semester, and never sees a draft.
+ */
 export default function MyTimetablePage() {
-  return (
-    <div className="space-y-6">
-      <PageHeading
-        title="My Timetable"
-        description="Your personal teaching timetable."
-      />
-      <ModulePlaceholder
-        phase="F3"
-        title="Personal timetable"
-        description="Read your published teaching sessions, week by week."
-      />
-    </div>
-  );
+  return <PublishedTimetableScreen instructorView />;
 }

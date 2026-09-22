@@ -290,8 +290,8 @@ export function ScheduleDetailScreen({ scheduleId }: ScheduleDetailScreenProps) 
             <CardHeader>
               <CardTitle>Published pointer</CardTitle>
               <CardDescription>
-                Which version is currently official. Publication is a Frontend F4 workflow action;
-                this page only reads the pointer.
+                Which version is currently official. This page reads the pointer; the
+                transitions themselves are performed on the version workflow page.
               </CardDescription>
             </CardHeader>
             <CardBody>

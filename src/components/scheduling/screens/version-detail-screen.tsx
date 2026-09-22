@@ -187,6 +187,37 @@ export function VersionDetailScreen({ versionId }: VersionDetailScreenProps) {
 
           <Card>
             <CardHeader>
+              <CardTitle>Version actions</CardTitle>
+              <CardDescription>
+                Manual editing and workflow are separate destinations. Each one re-checks
+                your role, the version status and the schedule scope before offering or
+                performing anything.
+              </CardDescription>
+            </CardHeader>
+            <CardBody className="flex flex-wrap gap-3">
+              <Link
+                className="text-sm underline"
+                href={SCHEDULING_ROUTES.versionEdit(version.id)}
+              >
+                Edit this version manually
+              </Link>
+              <Link
+                className="text-sm underline"
+                href={SCHEDULING_ROUTES.versionWorkflow(version.id)}
+              >
+                Workflow and validation
+              </Link>
+              <Link
+                className="text-sm underline"
+                href={SCHEDULING_ROUTES.versionReport(version.id)}
+              >
+                Analytics report
+              </Link>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Solver metadata</CardTitle>
               <CardDescription>
                 Recorded when this version was generated. A manual version stores none, because no
@@ -236,7 +267,8 @@ export function VersionDetailScreen({ versionId }: VersionDetailScreenProps) {
             <CardHeader>
               <CardTitle>Workflow metadata</CardTitle>
               <CardDescription>
-                Recorded by the backend. This phase reads it; it does not change it.
+                Recorded by the backend when this version moved through the workflow. The
+                transitions themselves are performed on the version workflow page.
               </CardDescription>
             </CardHeader>
             <CardBody>

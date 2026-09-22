@@ -99,6 +99,7 @@ function normalizeGroups(
 function slotFromPreview(slot: GenerationPlacement['slots'][number], index: number): TimetableSlot {
   return {
     key: `slot-${index}-${slot.id}`,
+    id: slot.id,
     sequence: slot.sequence,
     label: slot.label ?? '',
     startTime: toClockTime(slot.start_time),
@@ -109,6 +110,7 @@ function slotFromPreview(slot: GenerationPlacement['slots'][number], index: numb
 function slotFromEntry(slot: ScheduleEntry['time_slots'][number], index: number): TimetableSlot {
   return {
     key: `slot-${index}-${slot.position}-${slot.id}`,
+    id: slot.id,
     sequence: slot.sequence,
     label: slot.label ?? '',
     startTime: toClockTime(slot.start_time),

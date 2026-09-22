@@ -29,30 +29,3 @@ export function RestrictedState({
     </Card>
   );
 }
-
-export interface ModulePlaceholderProps {
-  title: string;
-  description: string;
-  phase: 'F1' | 'F2' | 'F3' | 'F4';
-}
-
-/**
- * Placeholder for a domain destination that belongs to a later frontend phase.
- *
- * Deliberately contains no invented tables, counts or schedule data.
- */
-export function ModulePlaceholder({ title, description, phase }: ModulePlaceholderProps) {
-  return (
-    <Card className="max-w-3xl">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardBody className="space-y-2">
-        <p className="text-sm text-muted-foreground">{description}</p>
-        <p className="text-sm">
-          This module will be implemented in Frontend {phase}.
-        </p>
-      </CardBody>
-    </Card>
-  );
-}

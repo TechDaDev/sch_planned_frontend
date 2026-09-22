@@ -16,6 +16,8 @@ export type NavIconKey =
   | 'reports'
   | 'audit'
   | 'timetable'
+  | 'published'
+  | 'imports'
   | 'forbidden';
 
 export interface NavItem {
@@ -64,11 +66,25 @@ export const NAV_ITEMS: readonly NavItem[] = [
     roles: ['COLLEGE_ADMIN', 'DEPARTMENT_ADMIN', 'SCHEDULER', 'VIEWER'],
   },
   {
+    href: '/published',
+    label: 'Official Timetable',
+    description: 'The published timetable of a semester.',
+    iconKey: 'published',
+    roles: ['COLLEGE_ADMIN', 'DEPARTMENT_ADMIN', 'SCHEDULER', 'VIEWER'],
+  },
+  {
     href: '/reports',
     label: 'Reports',
-    description: 'Operational reports and exports.',
+    description: 'Analytics and Excel/PDF exports.',
     iconKey: 'reports',
     roles: ['COLLEGE_ADMIN', 'DEPARTMENT_ADMIN', 'SCHEDULER', 'VIEWER'],
+  },
+  {
+    href: '/imports',
+    label: 'Imports',
+    description: 'Semester teaching plan workbook import.',
+    iconKey: 'imports',
+    roles: ['COLLEGE_ADMIN', 'DEPARTMENT_ADMIN'],
   },
   {
     href: '/audit',
@@ -99,7 +115,9 @@ export const DEPARTMENT_SCOPED_PATHS: readonly string[] = [
   '/academic',
   '/resources',
   '/scheduling',
+  '/published',
   '/reports',
+  '/imports',
   '/audit',
 ];
 
