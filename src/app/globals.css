@@ -1,0 +1,115 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens for the College Academic Schedule Planner.
+ *
+ * Colors are defined once as CSS variables and exposed to Tailwind as theme
+ * colors, so components never hardcode arbitrary palette values.
+ */
+:root {
+  --background: #f6f7f9;
+  --foreground: #16181d;
+  --surface: #ffffff;
+  --surface-muted: #eef0f4;
+  --line: #d6dae1;
+  --muted: #eceef2;
+  --muted-foreground: #5b6270;
+  --primary: #1f4e8c;
+  --primary-foreground: #ffffff;
+  --primary-hover: #173f74;
+  --danger: #b3261e;
+  --danger-surface: #fdecea;
+  --danger-foreground: #ffffff;
+  --success: #1b6b3a;
+  --success-surface: #e8f5ec;
+  --warning: #8a5300;
+  --warning-surface: #fdf3e2;
+  --ring: #2563a8;
+  --sidebar: #12233a;
+  --sidebar-foreground: #e6ebf2;
+  --sidebar-muted: #9fb0c6;
+  --sidebar-active: #1f4e8c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1216;
+    --foreground: #eff1f4;
+    --surface: #171b21;
+    --surface-muted: #1e232b;
+    --line: #2c333d;
+    --muted: #21262e;
+    --muted-foreground: #a3adbb;
+    --primary: #4d84cf;
+    --primary-foreground: #0b1220;
+    --primary-hover: #6b9be0;
+    --danger: #f27a72;
+    --danger-surface: #3a1a19;
+    --danger-foreground: #1a0f0e;
+    --success: #6fc48c;
+    --success-surface: #14301f;
+    --warning: #e0ae63;
+    --warning-surface: #33260f;
+    --ring: #7aa9e6;
+    --sidebar: #0c1522;
+    --sidebar-foreground: #e6ebf2;
+    --sidebar-muted: #93a4ba;
+    --sidebar-active: #2a5c9c;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, 'Noto Sans', sans-serif;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Respect users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
