@@ -75,7 +75,13 @@ function splitFieldErrors(
 ): Record<string, string[]> | undefined {
   const fieldErrors: Record<string, string[]> = {};
   for (const [key, raw] of Object.entries(value)) {
-    if (key === 'detail' || key === 'code' || key === 'request_id') {
+    if (key === 'detail' || key === 'request_id') {
+      continue;
+    }
+    // `code` is the platform error code only when it is a string. The academic
+    // API also has a `code` *field* (college, department, course, ...), whose
+    // DRF errors arrive as a list and must not be discarded.
+    if (key === 'code' && typeof raw === 'string') {
       continue;
     }
     const messages: string[] = [];

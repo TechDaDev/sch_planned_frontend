@@ -169,7 +169,128 @@ Frontend navigation is a usability affordance only — the backend remains the
 authorization authority. Department-scoped roles with `department = null` get a
 clear restricted state instead of a misleading view.
 
-## Route protection
+## Academic Administration (F1)
+
+`/academic` is the administration workspace for the academic structure. It is
+available to `COLLEGE_ADMIN` and `DEPARTMENT_ADMIN` only; schedulers, viewers and
+instructors never receive these navigation entries and are refused if they open a
+route directly.
+
+### Academic routes
+
+| Route | Records | Backend endpoint |
+| ----- | ------- | ---------------- |
+| `/academic` | Module overview (grouped links, no invented counts) | — |
+| `/academic/colleges` | Colleges | `/api/backend/colleges/` |
+| `/academic/departments` | Departments | `/api/backend/departments/` |
+| `/academic/academic-years` | Academic years (e.g. 2026–2027) | `/api/backend/academic-years/` |
+| `/academic/semesters` | First/second semester per year | `/api/backend/semesters/` |
+| `/academic/programs` | Study programs | `/api/backend/programs/` |
+| `/academic/stages` | Study stages | `/api/backend/stages/` |
+| `/academic/student-groups` | Student groups and subgroups | `/api/backend/student-groups/` |
+| `/academic/courses` | Course catalog | `/api/backend/courses/` |
+| `/academic/course-offerings` | A course delivered in a semester | `/api/backend/course-offerings/` |
+| `/academic/teaching-components` | Theory/practical parts with hours | `/api/backend/teaching-components/` |
+| `/academic/component-groups` | Component ↔ student group links | `/api/backend/teaching-component-groups/` |
+
+Every call goes through the F0 BFF proxy (`/api/backend/...`). No academic
+component knows the backend host or a token.
+
+### Role and write matrix
+
+| Record | `COLLEGE_ADMIN` | `DEPARTMENT_ADMIN` |
+| ------ | --------------- | ------------------ |
+| College | create, update, activate/deactivate | read only |
+| Academic year | create, update, activate/deactivate | read only |
+| Semester | create, update, activate/deactivate | read only |
+| Department | create, update every department | update its own department only |
+| Study program | all departments | own department only |
+| Study stage | all programs | own department only |
+| Student group | all stages | own department only |
+| Course | all departments | own department only; foreign joint courses read only |
+| Course offering | all | own-managed offerings only; foreign offerings read only |
+| Teaching component | all | components of offerings it manages only |
+| Component group link | any component/group, including cross-department | only component **and** group inside its own department |
+
+A `DEPARTMENT_ADMIN` with no department is restricted: the shell shows a clear
+"No department is assigned to this account." state and no mutation control is
+offered.
+
+These rules are frontend usability only. Django remains the authorization
+authority: the UI shows whatever the backend rejects, and out-of-scope records
+answer 404 without revealing that they exist.
+
+### Lifecycle: there are no deletes
+
+The academic API intentionally has no hard delete (`DELETE` answers HTTP 405).
+The UI therefore never renders a Delete/Trash/Remove action, and `src/lib/academic/api.ts`
+exposes no delete helper. Records are retired with **Activate** / **Deactivate**
+through `PATCH { "is_active": false }`, and deactivation always asks for
+confirmation stating that the record is not deleted. `TeachingComponentGroup` has
+no `is_active` field, so it offers no status action.
+
+### Read/write representation split
+
+Writes submit foreign keys as ids; reads always answer with compact nested
+summaries (`department: { id, name, code }`, `semester: { id, number, academic_year }`,
+...). Read models and write DTOs are therefore typed separately, and a form always
+converts values at the payload boundary. Updates use `PATCH` so a partial edit
+never has to resend required foreign keys (a department always needs a college).
+
+### Joint teaching and read-only rows
+
+A department-scoped user can legitimately see records it does not manage, because
+its students attend a joint component. Those rows stay visible but read-only and
+are labelled:
+
+- **Joint** — a course, or a link, that involves the user's students;
+- **External manager** — an offering or component managed by another department.
+
+A component's or group's owning department is not part of the nested summaries, so
+it is resolved from the already-loaded offerings, stages and programs instead of
+being guessed. When a selector would create a cross-department write the backend
+would reject, the option is not offered.
+
+### Academic hierarchy model
+
+```
+College
+ └─ Department
+     └─ StudyProgram (UNDERGRADUATE | MASTER | PHD)
+         └─ StudyStage (number >= 1)
+             └─ StudentGroup (optional parent_group → subgroup in the same stage)
+                 └─ linked to TeachingComponent
+Course (owned by a department)
+ └─ CourseOffering (semester + managing department + offering_code)
+     └─ TeachingComponent (THEORY | PRACTICAL, weekly_hours, session_duration_hours)
+         └─ TeachingComponentGroup → StudentGroup
+```
+
+A course offering's managing department must be the department that owns the
+course, so the form derives and locks it instead of letting a mismatched pair be
+submitted. `total_weekly_hours` (offering) and `sessions_per_week` (component) are
+computed by the backend and only displayed.
+
+Decimal hours are handled as exact scaled integers: inputs such as `1`, `1.5` and
+`2.00` are submitted as backend-shaped decimal strings, and the client warns when
+`weekly_hours / session_duration_hours` is not a whole number. Rounding is never
+applied, and the backend remains authoritative.
+
+### Form and error behaviour
+
+All eleven entities share one list page and one form panel, so loading, empty,
+error, search, status filter, capability checks and post-mutation refresh behave
+identically. Shared behaviour:
+
+- client-side search over name/code/offering code (no undocumented query
+  parameters are sent to the backend);
+- DRF field errors mapped beside the offending control, `non_field_errors` shown
+  in the error summary, and the panel stays open with the user's input intact;
+- 403/404/409/500 responses shown as safe messages — never a stack trace, SQL or
+  an internal payload;
+- tables scroll horizontally on small screens and drop secondary columns, forms
+  stay usable at mobile width, every control is labelled and keyboard operable.
+
 
 - `src/proxy.ts` (Next.js 16 renamed Middleware to Proxy) performs an optimistic
   cookie-**presence** redirect only, e.g. `/scheduling` → `/login?next=/scheduling`.
@@ -187,32 +308,40 @@ src/
     (public)/login/           unauthenticated layout + login page
     (app)/                    authenticated shell: dashboard, academic, resources,
                               scheduling, reports, audit, my-timetable, forbidden
+      academic/               F1 academic administration routes (server pages)
     api/auth/{login,logout,session}/
     api/backend/[...path]/    BFF proxy
     error.tsx, not-found.tsx, loading.tsx, page.tsx
-  components/                 app-shell, auth, providers, small UI primitives
+  components/
+    academic/                 shared academic UI (resource page, data table, form
+                              panel, screens/ for the eleven entities)
+    app-shell, auth, providers (session + toast), ui primitives
   lib/
+    academic/                 types, api, permissions, forms, validation,
+                              formatters, constants, collection hook
     api/                      browser client + ApiError normalization
     auth/                     cookies, backend calls, session resolution, types
     navigation/               navigation config + safe redirect helpers
     config/env.ts             server-only environment access
   proxy.ts                    optimistic route protection
-  test/                       fetch mock, jsdom setup
+  test/                       fetch mock, jsdom setup, academic fixtures
 ```
 
 ## Frontend phase roadmap
 
 | Phase | Scope |
 | ----- | ----- |
-| **F0 (this branch)** | Foundation, environment config, BFF auth (login/logout/session/refresh), application shell, role-aware navigation, protected routes, base UI states, dashboard, testing foundation, docs. |
-| F1 | Academic structure CRUD (colleges, departments, programs, stages, courses). |
-| F2 | Resources and instructors CRUD, room and instructor management. |
+| **F0** | Foundation, environment config, BFF auth (login/logout/session/refresh), application shell, role-aware navigation, protected routes, base UI states, dashboard, testing foundation, docs. |
+| **F1 (this branch)** | Academic Administration: colleges, departments, academic years, semesters, study programs, stages, student groups, courses, course offerings, teaching components and component/group links, with capability-aware read/write UI and no hard deletes. |
+| F2 | Resources: instructors, instructor availability/preferences, teaching assignments, rooms, room capabilities and availability, working days, time slots, breaks, calendar exceptions. |
 | F3 | Calendar, schedule generation, manual timetable editing, workflow. |
 | F4 | Reports, analytics, imports/exports (XLSX/PDF/multipart via the F0 proxy). |
 | F5 | Deployment hardening, Content-Security-Policy, mobile integration. |
 
-F0 intentionally ships no domain CRUD tables and no fake schedule data. Placeholder
-module pages state that they arrive in a later phase.
+F0 intentionally ships no domain CRUD tables and no fake schedule data. F1 ships the
+academic administration module only; scheduling, workflow, analytics, audit,
+imports and exports remain in F3–F5. No screen is populated with invented data: an
+empty backend produces a real empty state.
 
 ## Security notes
 
