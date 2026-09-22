@@ -96,6 +96,21 @@ function versionRoutes(account: unknown, options: VersionOptions = {}) {
   ];
 }
 
+/**
+ * Click a workflow action once the panel has confirmed the transition is offered.
+ *
+ * The action is enabled only after the workflow validation has reported that the
+ * stored version can still advance, so the test waits for that exactly as an
+ * administrator would.
+ */
+async function clickAction(user: ReturnType<typeof userEvent.setup>, name: string) {
+  const button = await screen.findByRole('button', { name });
+  await waitFor(() => {
+    expect(button).toBeEnabled();
+  });
+  await user.click(button);
+}
+
 describe('version workflow screen', () => {
   it('offers a college administrator the publish step on an approved college version', async () => {
     installFetchMock(versionRoutes(COLLEGE_ADMIN, { status: 'APPROVED' }));
@@ -119,7 +134,7 @@ describe('version workflow screen', () => {
     ]);
 
     renderScreen(<VersionWorkflowScreen versionId={501} />);
-    await user.click(await screen.findByRole('button', { name: 'Submit for review' }));
+    await clickAction(user, 'Submit for review');
 
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/Department schedule \(BIOAI\)/)).toBeVisible();
@@ -140,7 +155,7 @@ describe('version workflow screen', () => {
     ]);
 
     renderScreen(<VersionWorkflowScreen versionId={501} />);
-    await user.click(await screen.findByRole('button', { name: 'Submit for review' }));
+    await clickAction(user, 'Submit for review');
     await user.click(
       await within(await screen.findByRole('alertdialog')).findByRole('button', { name: 'Submit' }),
     );
@@ -165,7 +180,7 @@ describe('version workflow screen', () => {
     ]);
 
     renderScreen(<VersionWorkflowScreen versionId={501} />);
-    await user.click(await screen.findByRole('button', { name: 'Submit for review' }));
+    await clickAction(user, 'Submit for review');
     await user.click(
       await within(await screen.findByRole('alertdialog')).findByRole('button', { name: 'Submit' }),
     );
@@ -251,7 +266,7 @@ describe('version workflow screen', () => {
     ]);
 
     renderScreen(<VersionWorkflowScreen versionId={501} />);
-    await user.click(await screen.findByRole('button', { name: 'Submit for review' }));
+    await clickAction(user, 'Submit for review');
     await user.click(
       await within(await screen.findByRole('alertdialog')).findByRole('button', { name: 'Submit' }),
     );
@@ -282,7 +297,7 @@ describe('version workflow screen', () => {
     ]);
 
     renderScreen(<VersionWorkflowScreen versionId={501} />);
-    await user.click(await screen.findByRole('button', { name: 'Publish as official timetable' }));
+    await clickAction(user, 'Publish as official timetable');
     await user.click(
       await within(await screen.findByRole('alertdialog')).findByRole('button', { name: 'Publish' }),
     );
@@ -320,7 +335,7 @@ describe('version workflow screen', () => {
     expect(screen.getByText(/Entry #900/)).toBeVisible();
     expect(screen.getByText(/Conflicts with entry #902/)).toBeVisible();
     // Validation measures the stored version against today's configuration.
-    expect(screen.getByText(/today’s configuration/i)).toBeVisible();
+    expect(screen.getAllByText(/today’s configuration/i).length).toBeGreaterThan(0);
 
     const before = mock.countTo(VALIDATION_URL);
     await user.click(screen.getByRole('button', { name: 'Re-run validation' }));
@@ -354,6 +369,134 @@ describe('version workflow screen', () => {
     expect(await screen.findByText('ROOM_UNAVAILABLE')).toBeVisible();
     expect(screen.getByText('Blocked')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Publish as official timetable' })).toBeDisabled();
+  });
+
+  it('sends no workflow request at all while current validation has errors', async () => {
+    const user = userEvent.setup();
+    const mock = installFetchMock([
+      ...versionRoutes(COLLEGE_ADMIN, {
+        status: 'APPROVED',
+        validation: workflowValidationResult({
+          valid: false,
+          status: 'APPROVED',
+          summary: { entries: 12, errors: 1 },
+          issues: [
+            {
+              code: 'ROOM_UNAVAILABLE',
+              severity: 'ERROR',
+              message: 'The selected room is no longer available.',
+              entry_id: 900,
+            },
+          ],
+        }),
+      }),
+      {
+        url: `${PROXY}/schedule-versions/501/publish`,
+        method: 'POST',
+        handler: () => jsonResponse(workflowTransitionResult()),
+      },
+    ]);
+
+    renderScreen(<VersionWorkflowScreen versionId={501} />);
+
+    const button = await screen.findByRole('button', { name: 'Publish as official timetable' });
+    expect(await screen.findByText('Blocked')).toBeVisible();
+    expect(button).toBeDisabled();
+    expect(
+      screen.getByText(/does not pass validation against today’s configuration/i),
+    ).toBeVisible();
+
+    // Even an attempted interaction cannot reach the endpoint.
+    await user.click(button);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(mock.countTo(`${PROXY}/schedule-versions/501/publish`)).toBe(0);
+  });
+
+  it('offers no transition while the workflow validation has not answered', async () => {
+    const user = userEvent.setup();
+    const mock = installFetchMock([
+      ...versionRoutes(COLLEGE_ADMIN, { status: 'APPROVED' }).filter(
+        (route) => route.url !== VALIDATION_URL,
+      ),
+      { url: VALIDATION_URL, handler: () => new Promise<Response>(() => {}) },
+    ]);
+
+    renderScreen(<VersionWorkflowScreen versionId={501} />);
+
+    const button = await screen.findByRole('button', { name: 'Publish as official timetable' });
+    expect(button).toBeDisabled();
+    expect(
+      screen.getByText(/Checking whether this stored version can still advance/i),
+    ).toBeVisible();
+
+    await user.click(button);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(mock.countTo(`${PROXY}/schedule-versions/501/publish`)).toBe(0);
+  });
+
+  it('offers no transition when the workflow validation could not run', async () => {
+    installFetchMock([
+      ...versionRoutes(COLLEGE_ADMIN, { status: 'APPROVED' }).filter(
+        (route) => route.url !== VALIDATION_URL,
+      ),
+      {
+        url: VALIDATION_URL,
+        handler: () => jsonResponse({ detail: 'Validation service unavailable.' }, 503),
+      },
+    ]);
+
+    renderScreen(<VersionWorkflowScreen versionId={501} />);
+
+    expect(await screen.findByText('Validation could not run')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Publish as official timetable' })).toBeDisabled();
+    expect(screen.getByText(/workflow validation could not run, so it is not known/i)).toBeVisible();
+  });
+
+  it('offers the action again once a re-run confirms it can advance', async () => {
+    const user = userEvent.setup();
+    let attempt = 0;
+    installFetchMock([
+      ...versionRoutes(COLLEGE_ADMIN, { status: 'APPROVED' }).filter(
+        (route) => route.url !== VALIDATION_URL,
+      ),
+      {
+        url: VALIDATION_URL,
+        handler: () => {
+          attempt += 1;
+          return jsonResponse(
+            attempt === 1
+              ? workflowValidationResult({
+                  valid: false,
+                  status: 'APPROVED',
+                  summary: { entries: 12, errors: 1 },
+                  issues: [
+                    {
+                      code: 'ROOM_UNAVAILABLE',
+                      severity: 'ERROR',
+                      message: 'The selected room is no longer available.',
+                      entry_id: 900,
+                    },
+                  ],
+                })
+              : workflowValidationResult({ status: 'APPROVED' }),
+          );
+        },
+      },
+    ]);
+
+    renderScreen(<VersionWorkflowScreen versionId={501} />);
+
+    const button = await screen.findByRole('button', { name: 'Publish as official timetable' });
+    await waitFor(() => {
+      expect(button).toBeDisabled();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Re-run validation' }));
+
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+    expect(screen.getByText('Can advance')).toBeVisible();
   });
 
   it('distinguishes the publication pointer from the PUBLISHED status', async () => {

@@ -755,6 +755,14 @@ blocked later, because components, assignments, group links, room requirements,
 sharing, availability and the time grid may have changed since. Stored snapshots
 keep history readable; they do not keep a timetable valid forever.
 
+Because the backend refuses to advance a version whose stored timetable no longer
+passes that check, the transition is offered **only once validation has confirmed it
+can advance**. While the answer is still arriving, when the check itself could not
+run, or when it reports blocking errors, the action is disabled and the reason is
+stated beside it — the panel never shows `Blocked` next to a live button. The check
+is re-runnable from the same panel, so a corrected configuration restores the action
+without reloading the page.
+
 ### Publication pointer versus PUBLISHED status
 
 Several versions may carry the `PUBLISHED` status over time. The

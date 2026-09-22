@@ -106,7 +106,28 @@ export function WorkflowPanel({
   const validationError = validationResource.error?.detail ?? null;
   const isValidating = validationResource.status === 'loading';
 
+  /**
+   * A transition is offered only once the workflow validation has confirmed that this
+   * stored version can still advance.
+   *
+   * The question is answered by a second request, and the backend refuses to move a
+   * version whose stored timetable no longer passes validation against today's
+   * configuration. Offering the action while that answer is still unknown, failed or
+   * negative would only produce a refusal the page already has the means to see, so
+   * the control stays disabled and the reason is stated instead.
+   */
+  const validationBlocks = validation !== null && validation.valid !== true;
+  const mayAdvance = validation !== null && validation.valid === true;
+  const actionDisabled = isTransitioning || !mayAdvance;
+
   const runAction = async (chosen: WorkflowAction) => {
+    if (!mayAdvance) {
+      setConfirming(null);
+      setApplyError(
+        'The stored version does not pass workflow validation against today’s configuration, so no action was sent.',
+      );
+      return;
+    }
     setIsTransitioning(true);
     setApplyError(null);
     setRejection(null);
@@ -186,12 +207,24 @@ export function WorkflowPanel({
           </p>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => setConfirming(action)} disabled={isTransitioning}>
+            <Button onClick={() => setConfirming(action)} disabled={actionDisabled}>
               {WORKFLOW_ACTION_LABELS[action]}
             </Button>
-            <span className="text-xs text-muted-foreground">
-              You will confirm this action before it is sent.
-            </span>
+            {isValidating ? (
+              <span className="text-xs text-muted-foreground">
+                Checking whether this stored version can still advance…
+              </span>
+            ) : mayAdvance ? (
+              <span className="text-xs text-muted-foreground">
+                You will confirm this action before it is sent.
+              </span>
+            ) : (
+              <span className="text-xs text-danger">
+                {validationBlocks
+                  ? 'This action is not offered: the stored version does not pass validation against today’s configuration, so the backend would refuse it. Fix the blocking errors, or re-run the validation once the configuration has been corrected.'
+                  : 'This action is not offered: the workflow validation could not run, so it is not known whether the stored version can still advance. Re-run the validation to check again.'}
+              </span>
+            )}
           </div>
         )}
 
