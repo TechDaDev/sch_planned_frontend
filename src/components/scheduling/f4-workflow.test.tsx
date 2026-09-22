@@ -329,6 +329,33 @@ describe('version workflow screen', () => {
     });
   });
 
+  it('blocks a workflow transition while current validation has errors', async () => {
+    installFetchMock(
+      versionRoutes(COLLEGE_ADMIN, {
+        status: 'APPROVED',
+        validation: workflowValidationResult({
+          valid: false,
+          status: 'APPROVED',
+          summary: { entries: 12, errors: 1 },
+          issues: [
+            {
+              code: 'ROOM_UNAVAILABLE',
+              severity: 'ERROR',
+              message: 'The selected room is no longer available.',
+              entry_id: 900,
+            },
+          ],
+        }),
+      }),
+    );
+
+    renderScreen(<VersionWorkflowScreen versionId={501} />);
+
+    expect(await screen.findByText('ROOM_UNAVAILABLE')).toBeVisible();
+    expect(screen.getByText('Blocked')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Publish as official timetable' })).toBeDisabled();
+  });
+
   it('distinguishes the publication pointer from the PUBLISHED status', async () => {
     installFetchMock(versionRoutes(COLLEGE_ADMIN, { status: 'PUBLISHED' }));
 
