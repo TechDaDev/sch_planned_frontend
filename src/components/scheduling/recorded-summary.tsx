@@ -3,10 +3,14 @@
 import * as React from 'react';
 
 import { formatMetadataValue } from '@/lib/scheduling/audit';
-import { formatSummaryLabel } from '@/lib/scheduling/formatters';
+import { formatDepartment, formatSummaryLabel } from '@/lib/scheduling/formatters';
+import type { DepartmentSummary } from '@/lib/scheduling/types';
 
 /** Rows shown for a nested collection before the remainder is summarised. */
 const MAX_COLLECTION_ROWS = 5;
+
+/** Object levels rendered as labelled figures before values become one line of text. */
+const MAX_SUMMARY_DEPTH = 3;
 
 const LABEL_CLASS = 'text-xs uppercase tracking-wide text-muted-foreground';
 const VALUE_CLASS = 'text-sm break-words';
@@ -23,6 +27,36 @@ function summaryEntries(value: unknown): { key: string; value: unknown }[] {
   return Object.entries(value)
     .filter(([, entry]) => entry !== null && entry !== undefined && entry !== '')
     .map(([key, entry]) => ({ key, value: entry }));
+}
+
+/** True when a value names a department the way the rest of the app names one. */
+function isDepartmentSummary(value: Record<string, unknown>): value is Record<string, unknown> &
+  DepartmentSummary {
+  return typeof value.code === 'string' && typeof value.name === 'string';
+}
+
+/**
+ * One value inside a table cell or at the end of a nested object.
+ *
+ * A named department reads as the rest of the application writes it. Any other
+ * object becomes its own labelled values, and a list becomes one line, so a value
+ * is never shown as encoded text.
+ */
+function inlineValue(value: unknown): string {
+  if (isPlainObject(value)) {
+    if (isDepartmentSummary(value)) {
+      return formatDepartment(value);
+    }
+    const parts = summaryEntries(value).map(
+      (entry) => `${formatSummaryLabel(entry.key)}: ${inlineValue(entry.value)}`,
+    );
+    return parts.length > 0 ? parts.join(' · ') : formatMetadataValue(value);
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map(inlineValue).filter((part) => part.length > 0);
+    return parts.length > 0 ? parts.join(', ') : '—';
+  }
+  return formatMetadataValue(value);
 }
 
 /**
@@ -59,7 +93,7 @@ function CollectionTable({ rows }: { rows: Record<string, unknown>[] }) {
               <tr key={index} className="border-b border-line/50">
                 {columns.map((column) => (
                   <td key={column} className="py-1 pr-3 align-top">
-                    {formatMetadataValue(row[column])}
+                    {inlineValue(row[column])}
                   </td>
                 ))}
               </tr>
@@ -84,6 +118,12 @@ function CollectionTable({ rows }: { rows: Record<string, unknown>[] }) {
  * reader.
  */
 function SummaryValue({ value, depth }: { value: unknown; depth: number }) {
+  // A department is named the way the rest of the application names it, wherever
+  // it appears in the payload.
+  if (isPlainObject(value) && isDepartmentSummary(value)) {
+    return <span className={VALUE_CLASS}>{formatDepartment(value)}</span>;
+  }
+
   const entries = summaryEntries(value);
   if (entries.length > 0 && depth > 0) {
     return (
@@ -105,10 +145,10 @@ function SummaryValue({ value, depth }: { value: unknown; depth: number }) {
     if (objects.length > 0 && objects.length === value.length) {
       return <CollectionTable rows={objects} />;
     }
-    return <span className={VALUE_CLASS}>{formatMetadataValue(value)}</span>;
+    return <span className={VALUE_CLASS}>{inlineValue(value)}</span>;
   }
 
-  return <span className={VALUE_CLASS}>{formatMetadataValue(value)}</span>;
+  return <span className={VALUE_CLASS}>{inlineValue(value)}</span>;
 }
 
 export interface RecordedSummaryProps {
@@ -135,7 +175,7 @@ export function RecordedSummary({ summary, emptyLabel = 'Nothing recorded.' }: R
         <div key={entry.key}>
           <dt className={LABEL_CLASS}>{formatSummaryLabel(entry.key)}</dt>
           <dd className="mt-1">
-            <SummaryValue value={entry.value} depth={1} />
+            <SummaryValue value={entry.value} depth={MAX_SUMMARY_DEPTH} />
           </dd>
         </div>
       ))}

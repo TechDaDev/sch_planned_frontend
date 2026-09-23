@@ -73,6 +73,52 @@ describe('recorded summary rendering', () => {
     expect(within(table).getByRole('cell', { name: 'EE' })).toBeInTheDocument();
   });
 
+  it('names a department held inside a table cell', () => {
+    const { container } = render(
+      <RecordedSummary
+        summary={{
+          department_breakdown: [
+            {
+              department: { id: 1, code: 'CS', name: 'Computer Science' },
+              components: 16,
+              sessions: 32,
+              candidates: 3360,
+            },
+          ],
+        }}
+      />,
+    );
+
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('cell', { name: 'Computer Science (CS)' })).toBeInTheDocument();
+    expect(container.textContent).not.toContain('{"');
+    expect(container.textContent).not.toContain('"code"');
+  });
+
+  it('renders any other object inside a cell as its own labelled values', () => {
+    render(
+      <RecordedSummary
+        summary={{
+          rows: [{ session: { session_id: 'component:10:session:1', candidate_count: 105 } }],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole('cell', { name: 'Session id: component:10:session:1 · Candidate count: 105' }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows a deeply nested object as labelled values rather than encoded text', () => {
+    const summary = {
+      outer: { inner: { department: { id: 2, code: 'EE', name: 'Electrical Engineering' } } },
+    };
+    const { container } = render(<RecordedSummary summary={summary} />);
+
+    expect(screen.getByText('Electrical Engineering (EE)')).toBeInTheDocument();
+    expect(container.textContent).not.toContain('{"');
+  });
+
   it('caps a long collection and says how much is left', () => {
     const rows = Array.from({ length: 9 }, (_, index) => ({ session_id: `s${index}` }));
     render(<RecordedSummary summary={{ sessions: rows }} />);
