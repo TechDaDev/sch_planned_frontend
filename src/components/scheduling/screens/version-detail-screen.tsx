@@ -5,6 +5,7 @@ import * as React from 'react';
 
 import { useAcademicUser } from '@/components/academic/use-academic-user';
 import { SolverReportView } from '@/components/scheduling/generation-report';
+import { RecordedSummary } from '@/components/scheduling/recorded-summary';
 import { TimetableView } from '@/components/scheduling/timetable-view';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -247,18 +248,35 @@ export function VersionDetailScreen({ versionId }: VersionDetailScreenProps) {
             <Card>
               <CardHeader>
                 <CardTitle>Recorded summaries</CardTitle>
+                <CardDescription>
+                  What the readiness check and the generation run reported for this version. The
+                  figures are shown as they were recorded, so a later change to a course or a room
+                  does not rewrite them.
+                </CardDescription>
               </CardHeader>
-              <CardBody>
-                <dl className="grid gap-3 sm:grid-cols-2">
-                  <Row
-                    label="Validation summary"
-                    value={<pre className="text-xs">{JSON.stringify(version.validation_summary ?? {}, null, 2)}</pre>}
-                  />
-                  <Row
-                    label="Generation summary"
-                    value={<pre className="text-xs">{JSON.stringify(version.generation_summary ?? {}, null, 2)}</pre>}
-                  />
-                </dl>
+              <CardBody className="space-y-4">
+                {version.validation_summary ? (
+                  <div>
+                    <h3 className="text-sm font-medium">Validation summary</h3>
+                    <div className="mt-2">
+                      <RecordedSummary
+                        summary={version.validation_summary}
+                        emptyLabel="No validation figures are recorded for this version."
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {version.generation_summary ? (
+                  <div>
+                    <h3 className="text-sm font-medium">Generation summary</h3>
+                    <div className="mt-2">
+                      <RecordedSummary
+                        summary={version.generation_summary}
+                        emptyLabel="No generation figures are recorded for this version."
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </CardBody>
             </Card>
           ) : null}

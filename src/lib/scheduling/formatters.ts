@@ -118,6 +118,21 @@ export function formatSeverity(severity: Severity): string {
   return SEVERITY_LABELS[severity] ?? severity;
 }
 
+/**
+ * Turn a stored summary key into the label a reader sees.
+ *
+ * A persisted summary arrives as a payload whose keys are machine names such as
+ * `components_checked` or `min_candidates_per_session`. They are shown as
+ * sentences instead of as keys, without renaming the data underneath.
+ */
+export function formatSummaryLabel(key: string): string {
+  const words = key.replace(/[_-]+/g, ' ').trim();
+  if (words.length === 0) {
+    return key;
+  }
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function formatSolverStatus(status: string | null | undefined): string {
   if (!status) {
     return 'No solver result';
